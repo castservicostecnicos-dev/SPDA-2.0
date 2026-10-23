@@ -43,6 +43,13 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
   return bytes;
 }
 
+// ============================================================================
+// CONSTANTES DE LAYOUT & ESTILOS A4 IDÊNTICOS AO PDF
+// Largura útil A4 com margens de 20mm = 170mm = 9638 twips
+// ============================================================================
+const TOTAL_WIDTH_TWIPS = 9638;
+const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips
+
 const NO_BORDER = {
   style: BorderStyle.NONE,
   size: 0,
@@ -69,19 +76,15 @@ const BORDER_LIGHT_OBJ = {
   right: LIGHT_BORDER,
 };
 
-// 170mm útil em twips (1mm = 56.7 twips)
-const TOTAL_WIDTH_TWIPS = 9638;
-const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips
-
-// Helper para títulos de seção principais (azul escuro elegante)
+// Título de Seção Principal (ex: "5) VISTORIA DO SPDA EXISTENTE & PARECER VISUAL")
 function createSectionHeader(title: string): Paragraph {
   return new Paragraph({
-    spacing: { before: 240, after: 120 },
+    spacing: { before: 200, after: 100 },
     children: [
       new TextRun({
         text: title,
         bold: true,
-        size: 22, // 11pt
+        size: 21, // 10.5pt
         color: '0F172A', // Slate 900
         font: 'Arial',
       }),
@@ -89,8 +92,8 @@ function createSectionHeader(title: string): Paragraph {
   });
 }
 
-// Helper para faixas de subtítulo com fundo cinza claro
-function createSubheaderBanner(title: string): Table {
+// Faixa de Subtítulo Cinza / Divisória (ex: "DADOS DA EDIFICAÇÃO / CLIENTE")
+function createSubheaderBanner(title: string, align: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.LEFT): Table {
   return new Table({
     width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
     borders: BORDER_NONE_OBJ,
@@ -99,10 +102,11 @@ function createSubheaderBanner(title: string): Table {
         children: [
           new TableCell({
             width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-            shading: { fill: 'F1F5F9', type: ShadingType.CLEAR },
-            margins: { top: 70, bottom: 70, left: 140, right: 140 },
+            shading: { fill: 'F1F5F9', type: ShadingType.CLEAR }, // Slate 100
+            margins: { top: 60, bottom: 60, left: 120, right: 120 },
             children: [
               new Paragraph({
+                alignment: align,
                 children: [
                   new TextRun({
                     text: title,
@@ -121,15 +125,128 @@ function createSubheaderBanner(title: string): Table {
   });
 }
 
+// Caixa de Destaque com borda suave e fundo cinza claro (ex: "OBJETO DA INSPEÇÃO")
+function createHighlightBox(title: string, bodyText: string): Table {
+  return new Table({
+    width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+    borders: BORDER_LIGHT_OBJ,
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR }, // Slate 50
+            margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 30 },
+                children: [
+                  new TextRun({
+                    text: title,
+                    bold: true,
+                    size: 17, // 8.5pt
+                    color: '0F172A',
+                    font: 'Arial',
+                  }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [
+                  new TextRun({
+                    text: bodyText,
+                    size: 16, // 8pt
+                    color: '334155', // Slate 700
+                    font: 'Arial',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+// Tabela de Dados Estruturados com Linhas Zebradas Suaves
+function createZebraTable(rowsData: Array<[string, string]>, labelColWidthTwips = 2800): Table {
+  const valColWidthTwips = TOTAL_WIDTH_TWIPS - labelColWidthTwips;
+
+  const tableRows = rowsData.map(([label, val], idx) => {
+    const isEven = idx % 2 === 0;
+    const bgFill = isEven ? 'FAFAFA' : 'FFFFFF';
+
+    return new TableRow({
+      children: [
+        new TableCell({
+          width: { size: labelColWidthTwips, type: WidthType.DXA },
+          shading: { fill: bgFill, type: ShadingType.CLEAR },
+          margins: { top: 50, bottom: 50, left: 90, right: 90 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: label,
+                  bold: true,
+                  size: 16, // 8pt
+                  color: '1E293B',
+                  font: 'Arial',
+                }),
+              ],
+            }),
+          ],
+        }),
+        new TableCell({
+          width: { size: valColWidthTwips, type: WidthType.DXA },
+          shading: { fill: bgFill, type: ShadingType.CLEAR },
+          margins: { top: 50, bottom: 50, left: 90, right: 90 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: val || '—',
+                  size: 16, // 8pt
+                  color: '334155',
+                  font: 'Arial',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    });
+  });
+
+  return new Table({
+    width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+    rows: tableRows,
+  });
+}
+
 /**
- * Cria a grade de fotos em 4 colunas no Word (.docx), preservando proporção,
- * enquadramento exato, círculos de foco vermelhos e legendas técnicas.
+ * Cria a grade de fotos rigorosamente alinhada em 4 colunas no Word (.docx),
+ * idêntica à visualização do PDF (38.5mm x 48.0mm de proporção fixa, corte CSS object-cover,
+ * e círculos de foco vermelhos gravados diretamente nas imagens).
  */
 function createPhotoGridTable(
   photos: PhotoSlot[],
   processedJpegs: string[],
   isMultiTower: boolean,
-  showMeasurement = false
+  showMeasurement = false,
+  imgHeightPx = 175
 ): Table {
   const rows: TableRow[] = [];
   const chunkSize = 4;
@@ -147,7 +264,7 @@ function createPhotoGridTable(
       if (p && jpeg) {
         const tName = p.towerName || 'Torre 1';
         const cap = p.caption?.trim() || '';
-        const legendText = isMultiTower ? (cap ? `${tName} - ${cap}` : tName) : (cap || `Foto ${i + c + 1}`);
+        const legendText = isMultiTower ? (cap ? `${tName} - ${cap}` : tName) : cap;
 
         const cellChildren: Paragraph[] = [];
 
@@ -156,13 +273,13 @@ function createPhotoGridTable(
           cellChildren.push(
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              spacing: { before: 40, after: 40 },
+              spacing: { before: 20, after: 20 },
               children: [
                 new ImageRun({
                   data: imageBytes,
                   transformation: {
-                    width: 145, // 38.5mm @ 96dpi
-                    height: 181, // 48.0mm @ 96dpi
+                    width: 140, // 38.5mm proporcional no Word
+                    height: imgHeightPx, // 48mm ou ajustado proporcional
                   },
                   type: 'jpg',
                 }),
@@ -170,7 +287,7 @@ function createPhotoGridTable(
             })
           );
         } catch (e) {
-          console.warn('Erro ao inserir imagem no docx:', e);
+          console.warn('Erro ao inserir foto no docx:', e);
           cellChildren.push(
             new Paragraph({
               alignment: AlignmentType.CENTER,
@@ -180,33 +297,35 @@ function createPhotoGridTable(
         }
 
         // Legenda técnica da foto
-        cellChildren.push(
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 20, after: showMeasurement && p.measurementValue ? 10 : 60 },
-            children: [
-              new TextRun({
-                text: legendText,
-                bold: true,
-                size: 14, // 7pt
-                color: '1E293B',
-                font: 'Arial',
-              }),
-            ],
-          })
-        );
+        if (legendText) {
+          cellChildren.push(
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 10, after: showMeasurement && p.measurementValue ? 10 : 40 },
+              children: [
+                new TextRun({
+                  text: legendText,
+                  bold: true,
+                  size: 13, // 6.5pt
+                  color: '0F172A',
+                  font: 'Arial',
+                }),
+              ],
+            })
+          );
+        }
 
-        // Seção de Medição com valor em destaque
+        // Medição em Ohms em destaque azul
         if (showMeasurement && p.measurementValue) {
           cellChildren.push(
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              spacing: { before: 0, after: 60 },
+              spacing: { before: 0, after: 40 },
               children: [
                 new TextRun({
                   text: `R = ${p.measurementValue} (Conforme)`,
                   bold: true,
-                  size: 14, // 7pt
+                  size: 13, // 6.5pt
                   color: '1D4ED8', // Blue 700
                   font: 'Arial',
                 }),
@@ -218,14 +337,14 @@ function createPhotoGridTable(
         cells.push(
           new TableCell({
             width: { size: COL_WIDTH_4_TWIPS, type: WidthType.DXA },
-            margins: { top: 40, bottom: 40, left: 40, right: 40 },
+            margins: { top: 30, bottom: 30, left: 30, right: 30 },
             verticalAlign: VerticalAlign.TOP,
             borders: BORDER_NONE_OBJ,
             children: cellChildren,
           })
         );
       } else {
-        // Célula vazia para manter alinhamento de 4 colunas
+        // Célula vazia para manter proporção de 4 colunas
         cells.push(
           new TableCell({
             width: { size: COL_WIDTH_4_TWIPS, type: WidthType.DXA },
@@ -248,13 +367,24 @@ function createPhotoGridTable(
 }
 
 /**
- * Gera o arquivo DOCX editável com fidelidade visual idêntica ao PDF
+ * Função utilitária para dividir arrays em blocos de tamanho fixo
+ */
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
+/**
+ * Gera o arquivo DOCX 100% fiel ao PDF, editável pelo Word
  */
 export async function generateDocxBlob(
   report: SpdaReport,
   onProgress?: (progress: number, message: string) => void
 ): Promise<{ blob: Blob; fileName: string }> {
-  onProgress?.(5, 'Iniciando compilação do documento Word (.docx)...');
+  onProgress?.(5, 'Iniciando compilação do laudo em Word (.docx)...');
 
   const { client, company, conditions, texts } = report;
   const { spdaPhotos, measurementPhotos, quadrosPhotos, localPhotos } = consolidateReportPhotos(report);
@@ -265,97 +395,79 @@ export async function generateDocxBlob(
     Object.keys(report.torresData || {}).length > 1 ||
     new Set([...spdaPhotos, ...measurementPhotos, ...quadrosPhotos].map((p) => p.towerName).filter(Boolean)).size > 1;
 
-  // 1. Processamento e otimização das imagens (idêntico ao PDF)
-  onProgress?.(15, 'Processando logotipo da empresa e dados cadastrais...');
-  const logoDataUrl = await safeJpegDataUrl(company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL, 540, 230, '#ffffff');
+  // Processamento paralelo de imagens idêntico ao gerador de PDF
+  onProgress?.(15, `Processando ${spdaPhotos.length + measurementPhotos.length + quadrosPhotos.length + localPhotos.length} fotos do laudo...`);
 
-  onProgress?.(25, 'Processando fotos de satélite e fachada da edificação...');
-  const localJpegs: string[] = [];
-  for (let i = 0; i < localPhotos.length; i++) {
-    const processed = await processPhotoForPdf(localPhotos[i], 1200, 700, false);
-    localJpegs.push(processed);
-  }
+  const [
+    localJpegs,
+    spdaJpegs,
+    measurementJpegs,
+    quadrosJpegs,
+    equipmentJpeg,
+    logoDataUrl,
+    signatureJpeg,
+  ] = await Promise.all([
+    Promise.all(localPhotos.map((p) => processPhotoForPdf(p, 900, 600, false))),
+    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 770, 960, p.hasRedCircleMarker ?? true))),
+    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 770, 840, false))),
+    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 770, 840, p.hasRedCircleMarker ?? false))),
+    safeJpegDataUrl(report.equipmentPhotoUrl, 600, 400),
+    safeJpegDataUrl(company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL, 500, 200, '#ffffff'),
+    report.digitalSignature?.enabled && report.digitalSignature.imageUrl
+      ? safeJpegDataUrl(report.digitalSignature.imageUrl, 500, 200, '#ffffff')
+      : Promise.resolve(''),
+  ]);
 
-  onProgress?.(40, 'Processando fotos do SPDA existente e círculos de foco...');
-  const spdaJpegs: string[] = [];
-  for (let i = 0; i < spdaPhotos.length; i++) {
-    const processed = await processPhotoForPdf(spdaPhotos[i], 770, 960, true);
-    spdaJpegs.push(processed);
-  }
-
-  onProgress?.(60, 'Processando fotos dos pontos de inspeção e medição...');
-  const measurementJpegs: string[] = [];
-  for (let i = 0; i < measurementPhotos.length; i++) {
-    const processed = await processPhotoForPdf(measurementPhotos[i], 770, 960, false);
-    measurementJpegs.push(processed);
-  }
-
-  onProgress?.(75, 'Processando fotos dos quadros elétricos e DPS...');
-  const quadrosJpegs: string[] = [];
-  for (let i = 0; i < quadrosPhotos.length; i++) {
-    const processed = await processPhotoForPdf(quadrosPhotos[i], 770, 960, false);
-    quadrosJpegs.push(processed);
-  }
-
-  // Foto do instrumento miliohmímetro
-  let equipmentJpeg = '';
-  if (report.equipmentPhotoUrl) {
-    equipmentJpeg = await processPhotoForPdf(
-      { id: 'equip', url: report.equipmentPhotoUrl, caption: 'Miliohmímetro' },
-      800,
-      600,
-      false
-    );
-  }
-
-  // Imagem da Assinatura Digital do Responsável Técnico
-  let signatureJpeg = '';
-  if (report.digitalSignature?.enabled && report.digitalSignature.imageUrl) {
-    try {
-      signatureJpeg = await safeJpegDataUrl(report.digitalSignature.imageUrl, 500, 200, '#ffffff');
-    } catch {
-      signatureJpeg = '';
-    }
-  }
-
-  onProgress?.(85, 'Montando páginas e seções normativas no padrão ABNT NBR 5419...');
+  onProgress?.(70, 'Construindo estrutura de páginas e tabelas em conformidade com a ABNT NBR 5419:2018...');
 
   const docChildren: Array<Paragraph | Table> = [];
 
   // =========================================================================
-  // CAPA / CABEÇALHO DO LAUDO (PÁGINA 1)
+  // PÁGINA 1: CAPA EXECUTIVA (IDÊNTICA AO PDF)
   // =========================================================================
-  if (logoDataUrl) {
-    try {
-      const logoBytes = dataUrlToUint8Array(logoDataUrl);
-      docChildren.push(
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 0, after: 120 },
+  // Faixa Vermelha Superior
+  docChildren.push(
+    new Table({
+      width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+      borders: BORDER_NONE_OBJ,
+      rows: [
+        new TableRow({
           children: [
-            new ImageRun({
-              data: logoBytes,
-              transformation: { width: 170, height: 72 },
-              type: 'jpg',
+            new TableCell({
+              width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+              shading: { fill: 'F3F4F6', type: ShadingType.CLEAR },
+              margins: { top: 60, bottom: 60, left: 100, right: 100 },
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  children: [
+                    new TextRun({
+                      text: 'LAUDO TÉCNICO PERICIAL DE ENGENHARIA ELÉTRICA',
+                      bold: true,
+                      size: 18, // 9pt
+                      color: 'D9383A', // Vermelho oficial
+                      font: 'Arial',
+                    }),
+                  ],
+                }),
+              ],
             }),
           ],
-        })
-      );
-    } catch (e) {
-      console.warn('Erro ao inserir logo no docx:', e);
-    }
-  }
+        }),
+      ],
+    })
+  );
 
-  // Título do Laudo
+  // Título Principal Centralizado
   docChildren.push(
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { before: 80, after: 40 },
+      spacing: { before: 180, after: 40 },
       children: [
         new TextRun({
-          text: 'RELATÓRIO TÉCNICO DE INSPEÇÃO VISUAL E MEDIÇÕES DO SPDA',
+          text: 'SISTEMA DE PROTEÇÃO CONTRA',
           bold: true,
-          size: 26, // 13pt
+          size: 30, // 15pt
           color: '0F172A',
           font: 'Arial',
         }),
@@ -363,196 +475,249 @@ export async function generateDocxBlob(
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { before: 0, after: 180 },
+      spacing: { before: 0, after: 40 },
       children: [
         new TextRun({
-          text: 'SISTEMA DE PROTEÇÃO CONTRA DESCARGAS ATMOSFÉRICAS – ABNT NBR 5419:2018',
+          text: 'DESCARGAS ATMOSFÉRICAS (SPDA)',
           bold: true,
-          size: 19, // 9.5pt
-          color: '1E40AF', // Blue 800
+          size: 30, // 15pt
+          color: '0F172A',
+          font: 'Arial',
+        }),
+      ],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 0, after: 140 },
+      children: [
+        new TextRun({
+          text: 'Inspeção Visual, Medições de Continuidade Ôhmica & Avaliação NBR 5419/2018',
+          size: 18, // 9pt
+          color: '475569',
           font: 'Arial',
         }),
       ],
     })
   );
 
-  // Faixa de Identificação Cadastral
-  docChildren.push(createSubheaderBanner('DADOS CADASTRAIS DO CLIENTE & INSTALAÇÃO'));
+  // OBJETO DA INSPEÇÃO em Caixa de Destaque
+  docChildren.push(createHighlightBox('OBJETO DA INSPEÇÃO:', texts.objeto));
 
-  // Tabela de Dados do Cliente e Responsável Técnico
-  const clientDataRows: Array<[string, string]> = [
-    ['Cliente / Edifício:', client.name || 'Não informado'],
-    ['CNPJ / CPF:', client.cnpj || 'Não informado'],
-    ['Endereço Completo:', client.local || 'Não informado'],
-    ['Município / UF:', client.municipio || 'Não informado'],
-    ['Ramo de Atividade:', client.ramoAtividade || 'Residencial'],
-    ['Período de Avaliação:', client.periodoAvaliacao || client.dataEmissaoExtenso || 'Não informado'],
-    ['Engenheiro Responsável:', report.digitalSignature?.signerName || client.tecnico || 'Não informado'],
-    ['Título / Cargo:', report.digitalSignature?.signerRole || client.cargo || 'Engenheiro Eletricista'],
-    ['Registro CREA / CFT:', report.digitalSignature?.signerCrea || client.crea || 'Não informado'],
-    ['Número da ART:', report.digitalSignature?.signerArt || client.art || 'Não informado'],
-    ['Data de Emissão:', client.dataEmissaoExtenso || 'Não informado'],
+  docChildren.push(new Paragraph({ spacing: { before: 100, after: 0 }, children: [] }));
+
+  // DADOS DA EDIFICAÇÃO / CLIENTE
+  docChildren.push(createSubheaderBanner('DADOS DA EDIFICAÇÃO / CLIENTE'));
+
+  const clientInfoRows: Array<[string, string]> = [
+    ['CLIENTE:', client.name || '—'],
+    ['LOCAL:', client.local || '—'],
+    ['MUNICÍPIO / UF:', client.municipio || '—'],
+    ['CNPJ:', client.cnpj || '—'],
+    ['RAMO DE ATIVIDADE:', client.ramoAtividade || '—'],
+    ['PERÍODO DE AVALIAÇÃO:', client.periodoAvaliacao || client.dataEmissaoExtenso || '—'],
+    ['GRAU DE EXPOSIÇÃO:', client.exposicaoNivel || 'Baixa exposição a descargas atmosféricas'],
   ];
 
-  const clientTableRows = clientDataRows.map(([label, val], idx) => {
-    const isEven = idx % 2 === 0;
-    return new TableRow({
-      children: [
-        new TableCell({
-          width: { size: 2800, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 60, bottom: 60, left: 100, right: 100 },
-          borders: BORDER_LIGHT_OBJ,
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: label,
-                  bold: true,
-                  size: 17, // 8.5pt
-                  color: '0F172A',
-                  font: 'Arial',
-                }),
-              ],
-            }),
-          ],
-        }),
-        new TableCell({
-          width: { size: TOTAL_WIDTH_TWIPS - 2800, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 60, bottom: 60, left: 100, right: 100 },
-          borders: BORDER_LIGHT_OBJ,
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: val,
-                  size: 17, // 8.5pt
-                  color: '334155',
-                  font: 'Arial',
-                }),
-              ],
-            }),
-          ],
-        }),
-      ],
-    });
-  });
+  docChildren.push(createZebraTable(clientInfoRows, 2700));
 
-  docChildren.push(
-    new Table({
-      width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-      rows: clientTableRows,
-    })
-  );
+  docChildren.push(new Paragraph({ spacing: { before: 100, after: 0 }, children: [] }));
+
+  // DADOS DO RESPONSÁVEL TÉCNICO & EMISSÃO
+  docChildren.push(createSubheaderBanner('RESPONSABILIDADE TÉCNICA & REGISTRO PROFISSIONAL'));
+
+  const techInfoRows: Array<[string, string]> = [
+    ['RESPONSÁVEL TÉCNICO:', report.digitalSignature?.signerName || client.tecnico || '—'],
+    ['QUALIFICAÇÃO PROFISSIONAL:', report.digitalSignature?.signerRole || client.cargo || 'Engenheiro Eletricista'],
+    ['REGISTRO CREA / CONFEA:', report.digitalSignature?.signerCrea || client.crea || '—'],
+    ['CIDADE & DATA DE EMISSÃO:', `${client.cidadeEmissao}, ${client.dataEmissaoExtenso}`],
+  ];
+
+  if (report.digitalSignature?.enabled) {
+    techInfoRows.push(['AUTENTICAÇÃO DIGITAL:', 'DOCUMENTO ASSINADO DIGITALMENTE (PÁGINA FINAL)']);
+  }
+
+  docChildren.push(createZebraTable(techInfoRows, 3000));
 
   // Quebra para Página 2
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
   // =========================================================================
-  // PÁGINA 2: INTRODUÇÃO, NORMAS E DICIONÁRIO
+  // PÁGINA 2: INTRODUÇÃO, NORMAS & DICIONÁRIO EM 2 COLUNAS
   // =========================================================================
-  docChildren.push(createSectionHeader('1) INTRODUÇÃO & OBJETIVO DO LAUDO PERICIAL'));
+  docChildren.push(createSectionHeader('1) INTRODUÇÃO'));
 
-  const introItems = [
-    { num: '1.1- Objeto:', text: texts.introducaoItem1_1 || texts.objeto },
-    { num: '1.2- Finalidade:', text: texts.introducaoItem1_2 },
-    { num: '1.3- Metodologia:', text: texts.introducaoItem1_3 },
-    { num: '1.4- Abrangência:', text: texts.introducaoItem1_4 },
+  const introParagraphs = [
+    `1.1- Este LAUDO tem como objetivo fazer uma avaliação sucinta do SPDA existente na edificação do ${client.name}, verificar o estado de conservação das peças e acessórios e checar a sua conformidade com a norma técnica NBR 5419/2018 da ABNT em vigência. 1.2- Serão apresentadas as sugestões técnicas necessárias para conformidade à norma e apresentados desenhos e/ou detalhes caso seja necessário.`,
+    `1.3- A avaliação apresentada neste laudo teve como base as inspeções e medições efetuadas nas instalações e por informações obtidas junto a colaboradores e engenheiros da SJC Engenharia.`,
+    `1.4- Segundo a ABNT NBR 5419-1:2018, Proteção contra descargas atmosféricas – Parte 1: Princípios Gerais, item 9.4.1.2, as funções do SPDA externo são:`,
   ];
 
-  introItems.forEach((it) => {
+  introParagraphs.forEach((pText) => {
     docChildren.push(
       new Paragraph({
-        spacing: { before: 40, after: 60 },
+        spacing: { before: 30, after: 40 },
+        children: [new TextRun({ text: pText, size: 16, color: '1E293B', font: 'Arial' })],
+      })
+    );
+  });
+
+  const funcoesSpda = [
+    'a) Interceptar uma descarga atmosférica para a estrutura (com um subsistema de captação);',
+    'b) Conduzir a corrente da descarga atmosférica seguramente para a terra (com um subsistema de descida);',
+    'c) Dispersar esta corrente na terra (com um subsistema de aterramento).',
+  ];
+
+  funcoesSpda.forEach((fText) => {
+    docChildren.push(
+      new Paragraph({
+        indent: { left: 240 },
+        spacing: { before: 10, after: 20 },
+        children: [new TextRun({ text: fText, size: 15, color: '334155', font: 'Arial' })],
+      })
+    );
+  });
+
+  const introEtapas = [
+    'As inspeções e levantamentos de informações foram efetuados na seguinte ordem:',
+    'a) Análise das informações fornecidas pelos ANEXOS (Projetos e relatórios fornecidos pelo cliente);',
+    'b) Relatório de inspeção de SPDA e Caixas de Inspeção de Hastes de Aterramento;',
+    'c) Relatório de Inspeção de Medição de Continuidade de Malha de Aterramento;',
+    'd) Relatório de Inspeção de Pontos de aterramento e avaliação dos quadros de energia;',
+    'e) Avaliação Geral do Sistema de Proteção contra Descargas Atmosféricas e Laudo Técnico Final.',
+  ];
+
+  introEtapas.forEach((eText, eIdx) => {
+    docChildren.push(
+      new Paragraph({
+        indent: eIdx > 0 ? { left: 240 } : undefined,
+        spacing: { before: eIdx === 0 ? 30 : 10, after: 20 },
+        children: [new TextRun({ text: eText, size: 15, color: '334155', font: 'Arial' })],
+      })
+    );
+  });
+
+  // Faixa Divisória: Referências Normativas
+  docChildren.push(
+    new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
+    createSubheaderBanner('REFERÊNCIAS NORMATIVAS APLICÁVEIS', AlignmentType.CENTER),
+    new Paragraph({
+      spacing: { before: 30, after: 20 },
+      children: [
+        new TextRun({
+          text: 'Documentos indispensáveis à aplicação deste documento (edições mais recentes e emendas vigentes):',
+          size: 15,
+          color: '475569',
+          font: 'Arial',
+        }),
+      ],
+    })
+  );
+
+  (texts.referenciasNormativas || []).forEach((norma) => {
+    docChildren.push(
+      new Paragraph({
+        indent: { left: 180 },
+        spacing: { before: 10, after: 15 },
         children: [
-          new TextRun({ text: `${it.num} `, bold: true, size: 17, color: '0F172A', font: 'Arial' }),
-          new TextRun({ text: it.text, size: 17, color: '334155', font: 'Arial' }),
+          new TextRun({ text: '• ', bold: true, size: 16, color: 'D9383A', font: 'Arial' }),
+          new TextRun({ text: norma, size: 15, color: '1E293B', font: 'Arial' }),
         ],
       })
     );
   });
 
-  // Referências Normativas
-  docChildren.push(createSubheaderBanner('REFERÊNCIAS NORMATIVAS APLICÁVEIS'));
-  (texts.referenciasNormativas || []).forEach((norma) => {
-    docChildren.push(
-      new Paragraph({
-        bullet: { level: 0 },
-        spacing: { before: 20, after: 30 },
-        children: [new TextRun({ text: norma, size: 15, color: '334155', font: 'Arial' })],
-      })
-    );
-  });
+  // 2) DICIONÁRIO E ABREVIATURAS USADAS NESTE DOCUMENTO (EM 2 COLUNAS)
+  docChildren.push(
+    new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
+    createSubheaderBanner('2) DICIONÁRIO E ABREVIATURAS USADAS NESTE DOCUMENTO', AlignmentType.CENTER)
+  );
 
-  // Dicionário e Abreviaturas
-  docChildren.push(createSectionHeader('2) DICIONÁRIO E ABREVIATURAS USADAS'));
-  const dictRows = (texts.dicionario || []).slice(0, 10).map((d, dIdx) => {
-    const isEven = dIdx % 2 === 0;
-    return new TableRow({
-      children: [
-        new TableCell({
-          width: { size: 2400, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          borders: BORDER_LIGHT_OBJ,
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: d.termo, bold: true, size: 15, color: '0F172A', font: 'Arial' })],
-            }),
-          ],
-        }),
-        new TableCell({
-          width: { size: TOTAL_WIDTH_TWIPS - 2400, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          borders: BORDER_LIGHT_OBJ,
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: d.definicao, size: 15, color: '334155', font: 'Arial' })],
-            }),
-          ],
-        }),
-      ],
-    });
-  });
+  const dictItems = (texts.dicionario || []).slice(0, 8);
+  const dictRows: TableRow[] = [];
 
-  if (dictRows.length > 0) {
-    docChildren.push(
-      new Table({
-        width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-        rows: dictRows,
-      })
-    );
-  }
+  for (let i = 0; i < dictItems.length; i += 2) {
+    const leftItem = dictItems[i];
+    const rightItem = dictItems[i + 1];
 
-  // Quebra para Página 3
-  docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+    const isEven = Math.floor(i / 2) % 2 === 0;
+    const bgFill = isEven ? 'F8FAFC' : 'FFFFFF';
 
-  // =========================================================================
-  // PÁGINA 3: CARACTERÍSTICAS DA EDIFICAÇÃO & FOTOS EM DESTAQUE (AÉREA / FACHADA)
-  // =========================================================================
-  docChildren.push(createSectionHeader('3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL'));
-
-  if (client.descricaoBloco || texts.caracteristicasLocal) {
-    docChildren.push(
-      new Paragraph({
-        spacing: { before: 40, after: 100 },
+    dictRows.push(
+      new TableRow({
         children: [
-          new TextRun({
-            text: client.descricaoBloco || texts.caracteristicasLocal,
-            size: 17,
-            color: '334155',
-            font: 'Arial',
+          new TableCell({
+            width: { size: Math.floor(TOTAL_WIDTH_TWIPS / 2), type: WidthType.DXA },
+            shading: { fill: bgFill, type: ShadingType.CLEAR },
+            margins: { top: 40, bottom: 40, left: 80, right: 80 },
+            borders: BORDER_NONE_OBJ,
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: `${leftItem.termo}: `, bold: true, size: 14, color: '0F172A', font: 'Arial' }),
+                  new TextRun({ text: leftItem.definicao, size: 14, color: '334155', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+          new TableCell({
+            width: { size: Math.floor(TOTAL_WIDTH_TWIPS / 2), type: WidthType.DXA },
+            shading: { fill: bgFill, type: ShadingType.CLEAR },
+            margins: { top: 40, bottom: 40, left: 80, right: 80 },
+            borders: BORDER_NONE_OBJ,
+            children: rightItem
+              ? [
+                  new Paragraph({
+                    children: [
+                      new TextRun({ text: `${rightItem.termo}: `, bold: true, size: 14, color: '0F172A', font: 'Arial' }),
+                      new TextRun({ text: rightItem.definicao, size: 14, color: '334155', font: 'Arial' }),
+                    ],
+                  }),
+                ]
+              : [new Paragraph({ children: [] })],
           }),
         ],
       })
     );
   }
 
-  // Foto da Vista Aérea (se disponível)
+  docChildren.push(
+    new Table({
+      width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+      rows: dictRows,
+    })
+  );
+
+  // Nota CREA
+  docChildren.push(
+    new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
+    createHighlightBox(
+      'CREA – CONSELHO REGIONAL DE ENGENHARIA E AGRONOMIA',
+      'Inspeção realizada por engenheiro legalmente habilitado, com registro ativo e emissão da ART correspondente, assegurando o rigor técnico e legalidade das medições.'
+    )
+  );
+
+  // Quebra para Página 3
+  docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+
+  // =========================================================================
+  // PÁGINA 3: CARACTERÍSTICAS DA EDIFICAÇÃO & VISTA AÉREA EM DESTAQUE
+  // =========================================================================
+  docChildren.push(createSectionHeader('3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL'));
+
+  const rawLocDesc = (client.descricaoBloco || texts.caracteristicasLocal || '').trim();
+  if (rawLocDesc && !/^(?:torre\s*\d+|torre\s*\/\s*estrutura|estrutura\s*\/\s*torre)$/i.test(rawLocDesc)) {
+    docChildren.push(
+      new Paragraph({
+        spacing: { before: 20, after: 80 },
+        children: [new TextRun({ text: rawLocDesc, size: 16, color: '1E293B', font: 'Arial' })],
+      })
+    );
+  }
+
+  // 3.1) VISTA AÉREA
+  docChildren.push(createSubheaderBanner('3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE'));
+
   if (localJpegs[0]) {
-    docChildren.push(createSubheaderBanner('3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE'));
     try {
       const aereaBytes = dataUrlToUint8Array(localJpegs[0]);
       docChildren.push(
@@ -562,20 +727,20 @@ export async function generateDocxBlob(
           children: [
             new ImageRun({
               data: aereaBytes,
-              transformation: { width: 440, height: 230 },
+              transformation: { width: 500, height: 260 },
               type: 'jpg',
             }),
           ],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { before: 0, after: 120 },
+          spacing: { before: 0, after: 100 },
           children: [
             new TextRun({
-              text: localPhotos[0]?.caption || 'Vista aérea da edificação, circunvizinhança e posicionamento geográfico.',
+              text: localPhotos[0]?.caption || 'Vista aérea da edificação, circunvizinhança e posicionamento geográfico do condomínio.',
               bold: true,
               size: 15,
-              color: '475569',
+              color: '334155',
               font: 'Arial',
             }),
           ],
@@ -586,9 +751,27 @@ export async function generateDocxBlob(
     }
   }
 
-  // Foto da Fachada Principal (se disponível)
+  // PARÂMETROS CONSTRUTIVOS
+  docChildren.push(createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419)'));
+
+  const parametrosRows: Array<[string, string]> = [
+    ['Tipologia Construtiva:', 'Alvenaria Convencional / Estrutura em Concreto Armado'],
+    ['Topografia & Entorno:', 'Terreno Urbano Plano com Edificações Vizinhas'],
+    ['Nível de Proteção Dimensionado:', 'Nível III / IV (NBR 5419-2 - Gerenciamento de Risco)'],
+    ['Métodos de Proteção Aplicáveis:', 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)'],
+  ];
+
+  docChildren.push(createZebraTable(parametrosRows, 3500));
+
+  // Quebra para Página 4
+  docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+
+  // =========================================================================
+  // PÁGINA 4: FACHADA PRINCIPAL EM GRANDE DESTAQUE & 4) HISTÓRICO
+  // =========================================================================
+  docChildren.push(createSubheaderBanner('3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO'));
+
   if (localJpegs[1]) {
-    docChildren.push(createSubheaderBanner('3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO'));
     try {
       const fachadaBytes = dataUrlToUint8Array(localJpegs[1]);
       docChildren.push(
@@ -598,20 +781,20 @@ export async function generateDocxBlob(
           children: [
             new ImageRun({
               data: fachadaBytes,
-              transformation: { width: 440, height: 230 },
+              transformation: { width: 500, height: 260 },
               type: 'jpg',
             }),
           ],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { before: 0, after: 120 },
+          spacing: { before: 0, after: 80 },
           children: [
             new TextRun({
-              text: localPhotos[1]?.caption || 'Fachada frontal da edificação vistoriada.',
+              text: localPhotos[1]?.caption || 'Fachada principal da edificação, estrutura predial e acessos vistoriados.',
               bold: true,
               size: 15,
-              color: '475569',
+              color: '334155',
               font: 'Arial',
             }),
           ],
@@ -622,104 +805,120 @@ export async function generateDocxBlob(
     }
   }
 
-  // 4) Histórico de Ocorrências
-  docChildren.push(createSectionHeader('4) HISTÓRICO DE OCORRÊNCIAS & DESCARGAS ATMOSFÉRICAS'));
+  // 3.3 Foto de Entrada (se existir)
+  if (localJpegs[2]) {
+    docChildren.push(createSubheaderBanner('3.3) ENTRADA / ACESSO PRINCIPAL'));
+    try {
+      const entradaBytes = dataUrlToUint8Array(localJpegs[2]);
+      docChildren.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 60, after: 30 },
+          children: [
+            new ImageRun({
+              data: entradaBytes,
+              transformation: { width: 420, height: 180 },
+              type: 'jpg',
+            }),
+          ],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 0, after: 60 },
+          children: [
+            new TextRun({
+              text: localPhotos[2]?.caption || 'Portaria e acesso principal à edificação.',
+              bold: true,
+              size: 14,
+              color: '334155',
+              font: 'Arial',
+            }),
+          ],
+        })
+      );
+    } catch (e) {
+      console.warn('Erro ao inserir foto da portaria:', e);
+    }
+  }
+
+  // Texto de Ramo de atividade e nível de exposição
+  const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de moradores e equipamentos eletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
   docChildren.push(
     new Paragraph({
-      spacing: { before: 40, after: 60 },
-      children: [
-        new TextRun({
-          text: '4.1- Histórico Declarado: ',
-          bold: true,
-          size: 17,
-          color: '0F172A',
-          font: 'Arial',
-        }),
-        new TextRun({
-          text: client.historicoQueimaOcorrencias || texts.historicoItem4_1,
-          size: 17,
-          color: '334155',
-          font: 'Arial',
-        }),
-      ],
-    }),
-    new Paragraph({
-      spacing: { before: 40, after: 120 },
-      children: [
-        new TextRun({
-          text: '4.2- Avaliação de Danos: ',
-          bold: true,
-          size: 17,
-          color: '0F172A',
-          font: 'Arial',
-        }),
-        new TextRun({
-          text: texts.historicoItem4_2,
-          size: 17,
-          color: '334155',
-          font: 'Arial',
-        }),
-      ],
+      spacing: { before: 40, after: 80 },
+      children: [new TextRun({ text: exposicaoText, size: 16, color: '1E293B', font: 'Arial' })],
     })
   );
 
-  // Quebra para Página 4 (Vistoria do SPDA)
+  // 4) HISTÓRICO DE OCORRÊNCIAS
+  docChildren.push(createSectionHeader('4) HISTÓRICO DE OCORRÊNCIAS & DESCARGAS ATMOSFÉRICAS'));
+
+  const hist1 = `4.1- Histórico: Conforme informações obtidas durante a vistoria, ${client.historicoQueimaOcorrencias || texts.historicoItem4_1}`;
+  const hist2 = `4.2- A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.`;
+
+  docChildren.push(
+    new Paragraph({
+      spacing: { before: 20, after: 40 },
+      children: [new TextRun({ text: hist1, size: 16, color: '1E293B', font: 'Arial' })],
+    }),
+    new Paragraph({
+      spacing: { before: 20, after: 80 },
+      children: [new TextRun({ text: hist2, size: 16, color: '1E293B', font: 'Arial' })],
+    })
+  );
+
+  // Quebra para Página 5 (Vistoria do SPDA)
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
   // =========================================================================
-  // PÁGINA 4: 5) VISTORIA DO SPDA EXISTENTE COM FOTOS (4 POR LINHA)
+  // PÁGINA 5: 5) VISTORIA DO SPDA EXISTENTE & PARECER VISUAL
   // =========================================================================
   docChildren.push(createSectionHeader('5) VISTORIA DO SPDA EXISTENTE & PARECER VISUAL'));
 
   if (texts.vistoriaSpdaTexto) {
     docChildren.push(
       new Paragraph({
-        spacing: { before: 40, after: 100 },
-        children: [new TextRun({ text: texts.vistoriaSpdaTexto, size: 17, color: '334155', font: 'Arial' })],
+        spacing: { before: 20, after: 60 },
+        children: [new TextRun({ text: texts.vistoriaSpdaTexto, size: 16, color: '1E293B', font: 'Arial' })],
       })
     );
   }
 
-  // Grade de fotos do SPDA (com círculo vermelho de foco)
-  if (spdaPhotos.length > 0) {
-    docChildren.push(createPhotoGridTable(spdaPhotos, spdaJpegs, isMultiTower, false));
+  // Divisão das fotos do SPDA em blocos de até 16 fotos por página
+  const spdaChunks = chunkArray(spdaPhotos, 16);
+  const spdaJpegChunks = chunkArray(spdaJpegs, 16);
+
+  if (spdaPhotos.length === 0) {
+    // Sem fotos: Análise Pericial e Avaliação dos 4 Subsistemas
+    docChildren.push(createHighlightBox('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', texts.vistoriaSpdaAnalise));
+    docChildren.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }));
   } else {
-    docChildren.push(
-      new Paragraph({
-        spacing: { before: 40, after: 80 },
-        children: [
-          new TextRun({
-            text: '(Nenhuma foto de anomalia registrada no subsistema do SPDA existente durante esta vistoria).',
-            italics: true,
-            size: 16,
-            color: '64748B',
-            font: 'Arial',
-          }),
-        ],
-      })
-    );
-  }
+    // Primeira página de fotos do SPDA
+    docChildren.push(createPhotoGridTable(spdaChunks[0] || [], spdaJpegChunks[0] || [], isMultiTower, false));
 
-  // Painel de Parecer Técnico Visual da Vistoria
-  docChildren.push(
-    new Paragraph({ spacing: { before: 140, after: 40 }, children: [] }),
-    createSubheaderBanner('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO')
-  );
+    // Páginas de continuação se houver mais de 16 fotos
+    for (let pIdx = 1; pIdx < spdaChunks.length; pIdx++) {
+      docChildren.push(
+        new Paragraph({ children: [new PageBreak()] }),
+        createSectionHeader('5) VISTORIA DO SPDA EXISTENTE (CONTINUAÇÃO)'),
+        createPhotoGridTable(spdaChunks[pIdx] || [], spdaJpegChunks[pIdx] || [], isMultiTower, false)
+      );
+    }
 
-  if (texts.vistoriaSpdaAnalise) {
     docChildren.push(
-      new Paragraph({
-        spacing: { before: 60, after: 120 },
-        children: [new TextRun({ text: texts.vistoriaSpdaAnalise, size: 17, color: '334155', font: 'Arial' })],
-      })
+      new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
+      createHighlightBox('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', texts.vistoriaSpdaAnalise),
+      new Paragraph({ spacing: { before: 80, after: 0 }, children: [] })
     );
   }
 
   // Tabela dos 4 Subsistemas Vistoriados
-  const subsistemas = [
+  docChildren.push(createSubheaderBanner('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419)'));
+
+  const subsistemasData = [
     {
       item: 'Subsistema de Captação',
-      desc: conditions.subCapitacaoDesc || 'Mastros, pontas captoras Franklin, fitas de alumínio e suportes.',
+      desc: conditions.subCapitacaoDesc || 'Mastros, pontas captoras Franklin, fitas de alumínio e suportes de fixação.',
       status: conditions.subCapitacaoStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME'),
     },
     {
@@ -739,7 +938,7 @@ export async function generateDocxBlob(
     },
   ];
 
-  const subRows = subsistemas.map((sub, sIdx) => {
+  const subRows = subsistemasData.map((sub, sIdx) => {
     const isEven = sIdx % 2 === 0;
     const isConforme = sub.status === 'CONFORME';
     const isRequer = sub.status === 'REQUER AJUSTES';
@@ -749,9 +948,14 @@ export async function generateDocxBlob(
       children: [
         new TableCell({
           width: { size: 3000, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 60, bottom: 60, left: 100, right: 100 },
-          borders: BORDER_LIGHT_OBJ,
+          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
+          margins: { top: 50, bottom: 50, left: 80, right: 80 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
           children: [
             new Paragraph({
               children: [new TextRun({ text: sub.item, bold: true, size: 16, color: '0F172A', font: 'Arial' })],
@@ -760,9 +964,14 @@ export async function generateDocxBlob(
         }),
         new TableCell({
           width: { size: TOTAL_WIDTH_TWIPS - 5200, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 60, bottom: 60, left: 100, right: 100 },
-          borders: BORDER_LIGHT_OBJ,
+          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
+          margins: { top: 50, bottom: 50, left: 80, right: 80 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
           children: [
             new Paragraph({
               children: [new TextRun({ text: sub.desc, size: 15, color: '475569', font: 'Arial' })],
@@ -771,9 +980,14 @@ export async function generateDocxBlob(
         }),
         new TableCell({
           width: { size: 2200, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 60, bottom: 60, left: 100, right: 100 },
-          borders: BORDER_LIGHT_OBJ,
+          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
+          margins: { top: 50, bottom: 50, left: 80, right: 80 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
           children: [
             new Paragraph({
               alignment: AlignmentType.CENTER,
@@ -792,52 +1006,229 @@ export async function generateDocxBlob(
     })
   );
 
-  // Quebra para Página 5 (Medições)
+  // Quebra para Seção 6 (Medições)
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
   // =========================================================================
-  // PÁGINA 5: 6) MEDIÇÕES DE CONTINUIDADE ELÉTRICA & ATERRAMENTO
+  // PÁGINA 6: 6) MEDIÇÕES DE CONTINUIDADE OHMICA DOS CONDUTORES
   // =========================================================================
-  docChildren.push(createSectionHeader('6) MEDIÇÕES DE CONTINUIDADE ELÉTRICA & RESISTÊNCIA DE ATERRAMENTO'));
+  docChildren.push(createSectionHeader('6) MEDIÇÕES DE CONTINUIDADE OHMICA DOS CONDUTORES'));
 
   if (texts.medicoesContinuidadeTexto) {
     docChildren.push(
       new Paragraph({
-        spacing: { before: 40, after: 100 },
-        children: [new TextRun({ text: texts.medicoesContinuidadeTexto, size: 17, color: '334155', font: 'Arial' })],
+        spacing: { before: 20, after: 60 },
+        children: [new TextRun({ text: texts.medicoesContinuidadeTexto, size: 16, color: '1E293B', font: 'Arial' })],
       })
     );
   }
 
-  // Tabela de Dados do Instrumento Miliohmímetro
-  const equipRows = [
-    ['Instrumento Utilizado:', texts.equipamentoModelo || 'Miliohmímetro Digital de Alta Precisão (HTM-01)'],
-    ['Fabricante / Marca:', texts.equipamentoMarca || 'Hastec / Padrão NBR 5419'],
-    ['Método de Ensaio:', 'Método das 4 Pontas (Kelvin) com injeção de corrente contínua de 1A'],
-    ['Critério Normativo:', 'Resistência de Continuidade ôhmica R <= 0,20 Ω (NBR 5419-3:2018)'],
-  ].map(([label, val], idx) => {
-    const isEven = idx % 2 === 0;
+  // Caixa do Miliohmímetro (Foto + Dados Técnicos)
+  const equipSpecsParagraphs = [
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `Miliohmímetro ${texts.equipamentoModelo} - ${texts.equipamentoMarca}`,
+          bold: true,
+          size: 17,
+          color: '0F172A',
+          font: 'Arial',
+        }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 20, after: 20 },
+      children: [new TextRun({ text: texts.equipamentoDescricao, size: 15, color: '475569', font: 'Arial' })],
+    }),
+    new Paragraph({
+      spacing: { before: 10, after: 10 },
+      children: [
+        new TextRun({ text: 'Local: ', bold: true, size: 15, color: '0F172A', font: 'Arial' }),
+        new TextRun({ text: texts.medicoesLocal, size: 15, color: '334155', font: 'Arial' }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 10, after: 10 },
+      children: [
+        new TextRun({ text: 'Corrente de Ensaio: ', bold: true, size: 15, color: '0F172A', font: 'Arial' }),
+        new TextRun({ text: texts.medicoesCorrenteAplicada, size: 15, color: '334155', font: 'Arial' }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 10, after: 0 },
+      children: [
+        new TextRun({ text: 'Tipo de Corrente: ', bold: true, size: 15, color: '0F172A', font: 'Arial' }),
+        new TextRun({ text: texts.medicoesTipoCorrente, size: 15, color: '334155', font: 'Arial' }),
+      ],
+    }),
+  ];
+
+  if (equipmentJpeg) {
+    try {
+      const eqBytes = dataUrlToUint8Array(equipmentJpeg);
+      docChildren.push(
+        new Table({
+          width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+          borders: BORDER_LIGHT_OBJ,
+          rows: [
+            new TableRow({
+              children: [
+                new TableCell({
+                  width: { size: 3800, type: WidthType.DXA },
+                  shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+                  margins: { top: 60, bottom: 60, left: 60, right: 60 },
+                  verticalAlign: VerticalAlign.CENTER,
+                  borders: BORDER_NONE_OBJ,
+                  children: [
+                    new Paragraph({
+                      alignment: AlignmentType.CENTER,
+                      children: [
+                        new ImageRun({
+                          data: eqBytes,
+                          transformation: { width: 190, height: 135 },
+                          type: 'jpg',
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+                new TableCell({
+                  width: { size: TOTAL_WIDTH_TWIPS - 3800, type: WidthType.DXA },
+                  shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+                  margins: { top: 80, bottom: 80, left: 100, right: 100 },
+                  borders: BORDER_NONE_OBJ,
+                  children: equipSpecsParagraphs,
+                }),
+              ],
+            }),
+          ],
+        })
+      );
+    } catch {
+      docChildren.push(createHighlightBox('INSTRUMENTO DE MEDIÇÃO:', texts.equipamentoDescricao));
+    }
+  } else {
+    docChildren.push(
+      new Table({
+        width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+        borders: BORDER_LIGHT_OBJ,
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+                shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+                margins: { top: 80, bottom: 80, left: 120, right: 120 },
+                children: equipSpecsParagraphs,
+              }),
+            ],
+          }),
+        ],
+      })
+    );
+  }
+
+  docChildren.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }));
+
+  // PARÂMETROS NORMATIVOS DE CONTINUIDADE
+  docChildren.push(createSubheaderBanner('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419/2018)'));
+
+  const criteriosData = [
+    {
+      criterio: 'Continuidade de Armaduras e Malhas',
+      norma: 'NBR 5419-3:2018 (Item 5.3.5)',
+      limite: '≤ 0,200 Ω (200 mΩ)',
+      status: conditions.continuidadeAprovada ? 'CONFORME' : 'ATENÇÃO',
+    },
+    {
+      criterio: 'Resistência de Equipotencialização',
+      norma: 'NBR 5419-3:2018 (Item 6.2)',
+      limite: '≤ 0,200 Ω (200 mΩ)',
+      status: 'CONFORME',
+    },
+    {
+      criterio: 'Método de 4 Terminais (Kelvin)',
+      norma: 'Injeção de corrente DC contínua',
+      limite: 'Min. 1,0 A sob 4 fios',
+      status: 'APLICADO',
+    },
+    {
+      criterio: 'Estado Físico das Caixas de Inspeção',
+      norma: 'Aterramento & Equalização',
+      limite: 'Desobstruídas e secas',
+      status: conditions.caixasInspecaoLimpas ? 'CONFORME' : 'LIMPEZA PENDENTE',
+    },
+  ];
+
+  const critRows = criteriosData.map((crit, cIdx) => {
+    const isEven = cIdx % 2 === 0;
+    const isGood = crit.status === 'CONFORME' || crit.status === 'APLICADO';
+    const statusColor = isGood ? '15803D' : 'DC2626';
+
     return new TableRow({
       children: [
         new TableCell({
-          width: { size: 3000, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 50, bottom: 50, left: 80, right: 80 },
-          borders: BORDER_LIGHT_OBJ,
+          width: { size: 3600, type: WidthType.DXA },
+          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
+          margins: { top: 40, bottom: 40, left: 80, right: 80 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
           children: [
             new Paragraph({
-              children: [new TextRun({ text: label, bold: true, size: 16, color: '0F172A', font: 'Arial' })],
+              children: [new TextRun({ text: crit.criterio, bold: true, size: 14, color: '0F172A', font: 'Arial' })],
             }),
           ],
         }),
         new TableCell({
-          width: { size: TOTAL_WIDTH_TWIPS - 3000, type: WidthType.DXA },
-          shading: { fill: isEven ? 'F8FAFC' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 50, bottom: 50, left: 80, right: 80 },
-          borders: BORDER_LIGHT_OBJ,
+          width: { size: 2600, type: WidthType.DXA },
+          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
+          margins: { top: 40, bottom: 40, left: 80, right: 80 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
           children: [
             new Paragraph({
-              children: [new TextRun({ text: val, size: 16, color: '334155', font: 'Arial' })],
+              children: [new TextRun({ text: crit.norma, size: 14, color: '475569', font: 'Arial' })],
+            }),
+          ],
+        }),
+        new TableCell({
+          width: { size: 2000, type: WidthType.DXA },
+          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
+          margins: { top: 40, bottom: 40, left: 80, right: 80 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: crit.limite, bold: true, size: 14, color: '0F172A', font: 'Arial' })],
+            }),
+          ],
+        }),
+        new TableCell({
+          width: { size: 1438, type: WidthType.DXA },
+          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
+          margins: { top: 40, bottom: 40, left: 80, right: 80 },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          },
+          children: [
+            new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              children: [new TextRun({ text: crit.status, bold: true, size: 14, color: statusColor, font: 'Arial' })],
             }),
           ],
         }),
@@ -848,99 +1239,103 @@ export async function generateDocxBlob(
   docChildren.push(
     new Table({
       width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-      rows: equipRows,
+      rows: critRows,
     })
   );
 
-  // Foto do Equipamento (se disponível)
-  if (equipmentJpeg) {
-    try {
-      const eqBytes = dataUrlToUint8Array(equipmentJpeg);
+  docChildren.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }));
+
+  // Grade de Fotos dos Pontos de Medição (até 8 na página principal, continuação se houver mais)
+  const measurePage1 = measurementPhotos.slice(0, 8);
+  const measureJpegsPage1 = measurementJpegs.slice(0, 8);
+  const measureRestantes = measurementPhotos.slice(8);
+  const measureJpegsRestantes = measurementJpegs.slice(8);
+  const measureContChunks = chunkArray(measureRestantes, 16);
+  const measureContJpegChunks = chunkArray(measureJpegsRestantes, 16);
+
+  if (measurePage1.length > 0) {
+    docChildren.push(
+      createSubheaderBanner('6.1) PONTOS DE MEDIÇÃO DE CONTINUIDADE OBTIDOS'),
+      createPhotoGridTable(measurePage1, measureJpegsPage1, isMultiTower, true, 140)
+    );
+
+    // Páginas de Continuação de Medições se houver
+    for (let cIdx = 0; cIdx < measureContChunks.length; cIdx++) {
       docChildren.push(
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 80, after: 30 },
-          children: [
-            new ImageRun({
-              data: eqBytes,
-              transformation: { width: 220, height: 165 },
-              type: 'jpg',
-            }),
-          ],
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 0, after: 100 },
-          children: [
-            new TextRun({
-              text: 'Instrumento Miliohmímetro digital calibrado com ART',
-              bold: true,
-              size: 14,
-              color: '475569',
-              font: 'Arial',
-            }),
-          ],
-        })
+        new Paragraph({ children: [new PageBreak()] }),
+        createSectionHeader('6.1) PONTOS DE MEDIÇÃO (CONTINUAÇÃO)'),
+        createPhotoGridTable(measureContChunks[cIdx] || [], measureContJpegChunks[cIdx] || [], isMultiTower, true, 165)
       );
-    } catch (e) {
-      console.warn('Erro ao inserir foto do instrumento no docx:', e);
     }
-  }
-
-  // Grade de Fotos dos Pontos de Medição (com valor medido em destaque)
-  docChildren.push(
-    new Paragraph({ spacing: { before: 100, after: 40 }, children: [] }),
-    createSubheaderBanner('REGISTRO FOTOGRÁFICO DOS PONTOS DE MEDIÇÃO & CONTINUIDADE ÔHMICA')
-  );
-
-  if (measurementPhotos.length > 0) {
-    docChildren.push(createPhotoGridTable(measurementPhotos, measurementJpegs, isMultiTower, true));
   } else {
     docChildren.push(
+      createSubheaderBanner('METODOLOGIA DE 4 TERMINAIS (KELVIN) E PONTOS DE ENSAIO'),
+      createZebraTable([
+        ['1. Malha de Captação para Descidas Principais', 'Ensaio a 4 fios com injeção DC contínua [CONFORME]'],
+        ['2. Descidas para Caixas de Equalização / BEP', 'Conexões mecânicas ensaiadas sob carga [CONFORME]'],
+        ['3. Malha de Aterramento para Estruturas Metálicas', 'Equipotencialização de massas da edificação [CONFORME]'],
+      ])
+    );
+  }
+
+  // Quebra para Seção 7 (Quadros com DPS)
+  docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+
+  // =========================================================================
+  // PÁGINA 7: 7) ANÁLISE DOS QUADROS DE ENERGIA & PROTEÇÃO CONTRA SURTOS (DPS)
+  // =========================================================================
+  docChildren.push(createSectionHeader('7) ANÁLISE DOS QUADROS DE ENERGIA & PROTEÇÃO CONTRA SURTOS (DPS)'));
+
+  if (texts.pontosInspecaoAvaliacao) {
+    docChildren.push(
       new Paragraph({
-        spacing: { before: 40, after: 80 },
-        children: [
-          new TextRun({
-            text: '(Nenhum ponto de medição registrado nesta vistoria).',
-            italics: true,
-            size: 16,
-            color: '64748B',
-            font: 'Arial',
-          }),
-        ],
+        spacing: { before: 20, after: 40 },
+        children: [new TextRun({ text: texts.pontosInspecaoAvaliacao, size: 16, color: '1E293B', font: 'Arial' })],
       })
     );
   }
 
-  // Quebra para Página 6 (Quadros com DPS)
-  docChildren.push(new Paragraph({ children: [new PageBreak()] }));
-
-  // =========================================================================
-  // PÁGINA 6: 7) QUADROS ELÉTRICOS & DISPOSITIVOS DE PROTEÇÃO CONTRA SURTOS (DPS)
-  // =========================================================================
-  docChildren.push(createSectionHeader('7) QUADROS ELÉTRICOS & DISPOSITIVOS DE PROTEÇÃO CONTRA SURTOS (DPS)'));
+  docChildren.push(createSubheaderBanner('Avaliação dos Dispositivos de Proteção contra Surtos (DPS) - NBR 5410', AlignmentType.CENTER));
 
   if (texts.analiseQuadrosTexto) {
     docChildren.push(
       new Paragraph({
-        spacing: { before: 40, after: 100 },
-        children: [new TextRun({ text: texts.analiseQuadrosTexto, size: 17, color: '334155', font: 'Arial' })],
+        spacing: { before: 40, after: 60 },
+        children: [new TextRun({ text: texts.analiseQuadrosTexto, size: 15, color: '334155', font: 'Arial' })],
       })
     );
   }
 
-  // Grade de fotos dos Quadros com DPS
-  if (quadrosPhotos.length > 0) {
-    docChildren.push(createPhotoGridTable(quadrosPhotos, quadrosJpegs, isMultiTower, false));
+  const quadrosPage1 = quadrosPhotos.slice(0, 16);
+  const quadrosJpegsPage1 = quadrosJpegs.slice(0, 16);
+  const quadrosRestantes = quadrosPhotos.slice(16);
+  const quadrosJpegsRestantes = quadrosJpegs.slice(16);
+  const quadrosContChunks = chunkArray(quadrosRestantes, 16);
+  const quadrosContJpegChunks = chunkArray(quadrosJpegsRestantes, 16);
+
+  if (quadrosPage1.length > 0) {
+    docChildren.push(
+      createSubheaderBanner('REGISTROS FOTOGRÁFICOS DOS QUADROS DE ENERGIA'),
+      createPhotoGridTable(quadrosPage1, quadrosJpegsPage1, isMultiTower, false, 150)
+    );
+
+    // Páginas de continuação dos quadros se houver mais de 16 fotos
+    for (let cIdx = 0; cIdx < quadrosContChunks.length; cIdx++) {
+      docChildren.push(
+        new Paragraph({ children: [new PageBreak()] }),
+        createSectionHeader('7) ANÁLISE DOS QUADROS DE ENERGIA (CONTINUAÇÃO)'),
+        createPhotoGridTable(quadrosContChunks[cIdx] || [], quadrosContJpegChunks[cIdx] || [], isMultiTower, false, 165)
+      );
+    }
   } else {
     docChildren.push(
       new Paragraph({
-        spacing: { before: 40, after: 80 },
+        spacing: { before: 30, after: 30 },
         children: [
           new TextRun({
-            text: '(Nenhum quadro elétrico registrado nesta vistoria).',
+            text: '(Nenhum registro fotográfico dos quadros de distribuição anexado nesta vistoria).',
             italics: true,
-            size: 16,
+            size: 15,
             color: '64748B',
             font: 'Arial',
           }),
@@ -952,43 +1347,36 @@ export async function generateDocxBlob(
   // Parecer Técnico dos Quadros
   if (texts.analiseQuadrosConclusao) {
     docChildren.push(
-      new Paragraph({ spacing: { before: 120, after: 40 }, children: [] }),
-      createSubheaderBanner('PARECER TÉCNICO SOBRE OS DISPOSITIVOS DPS E BARRAMENTOS')
-    );
-    docChildren.push(
-      new Paragraph({
-        spacing: { before: 60, after: 120 },
-        children: [new TextRun({ text: texts.analiseQuadrosConclusao, size: 17, color: '334155', font: 'Arial' })],
-      })
+      new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
+      createHighlightBox('PARECER TÉCNICO SOBRE OS DISPOSITIVOS DPS E BARRAMENTOS:', texts.analiseQuadrosConclusao)
     );
   }
 
-  // Quebra para Página Final (Recomendações e Conclusão com Assinatura)
+  // Quebra para Página Final (Recomendações, Conclusão & Assinatura)
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
   // =========================================================================
-  // PÁGINA FINAL: RECOMENDAÇÕES, CONCLUSÃO & ASSINATURA DIGITAL
+  // PÁGINA FINAL: RECOMENDAÇÕES PRIORITÁRIAS, CONCLUSÃO & ASSINATURA DIGITAL
   // =========================================================================
   docChildren.push(createSectionHeader('8) CORREÇÕES NECESSÁRIAS PARA PROTEÇÃO DAS EDIFICAÇÕES'));
 
-  docChildren.push(createSubheaderBanner('RECOMENDAÇÕES TÉCNICAS PRIORITÁRIAS (NBR 5419:2018)'));
+  docChildren.push(createSubheaderBanner('Recomendações Técnicas Prioritárias (NBR 5419:2018)', AlignmentType.CENTER));
 
   (texts.recomendacoes || []).forEach((rec, rIdx) => {
     docChildren.push(
       new Paragraph({
-        spacing: { before: 30, after: 40 },
+        spacing: { before: 20, after: 20 },
         children: [
           new TextRun({
             text: `8.${rIdx + 1}- `,
             bold: true,
-            size: 17,
-            color: 'DC2626', // Red 600
+            size: 15,
+            color: 'DC2626', // Vermelho oficial
             font: 'Arial',
           }),
           new TextRun({
             text: rec,
-            bold: true,
-            size: 17,
+            size: 15,
             color: 'DC2626',
             font: 'Arial',
           }),
@@ -1000,12 +1388,12 @@ export async function generateDocxBlob(
   if (texts.recomendacoesTextoFinal) {
     docChildren.push(
       new Paragraph({
-        spacing: { before: 60, after: 120 },
+        spacing: { before: 40, after: 80 },
         children: [
           new TextRun({
             text: texts.recomendacoesTextoFinal,
             bold: true,
-            size: 17,
+            size: 16,
             color: 'DC2626',
             font: 'Arial',
           }),
@@ -1014,40 +1402,31 @@ export async function generateDocxBlob(
     );
   }
 
-  // 9) Conclusão Técnica Final
+  // 9) CONCLUSÃO TÉCNICA FINAL
   docChildren.push(createSectionHeader('9) CONCLUSÃO FINAL DESTE RELATÓRIO TÉCNICO'));
 
   if (texts.conclusaoFinal) {
     docChildren.push(
       new Paragraph({
-        spacing: { before: 40, after: 100 },
-        children: [new TextRun({ text: texts.conclusaoFinal, size: 17, color: '334155', font: 'Arial' })],
+        spacing: { before: 20, after: 80 },
+        children: [new TextRun({ text: texts.conclusaoFinal, size: 16, color: '1E293B', font: 'Arial' })],
       })
     );
   }
 
-  // Termo de Encerramento e Validade
-  docChildren.push(createSubheaderBanner('DISPOSIÇÕES FINAIS & VALIDADE DA INSPEÇÃO'));
+  // DISPOSIÇÕES FINAIS & VALIDADE DA INSPEÇÃO
   docChildren.push(
-    new Paragraph({
-      spacing: { before: 40, after: 120 },
-      children: [
-        new TextRun({
-          text:
-            'Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2018 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.',
-          size: 16,
-          color: '475569',
-          font: 'Arial',
-        }),
-      ],
-    })
+    createHighlightBox(
+      'DISPOSIÇÕES FINAIS & VALIDADE DA INSPEÇÃO:',
+      'Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2018 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.'
+    )
   );
 
   // Cidade e Data
   docChildren.push(
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 60, after: 180 },
+      spacing: { before: 60, after: 120 },
       children: [
         new TextRun({
           text: `${client.cidadeEmissao || 'São José dos Campos'}, ${client.dataEmissaoExtenso || 'emissão com ART'}.`,
@@ -1061,7 +1440,7 @@ export async function generateDocxBlob(
   );
 
   // =========================================================================
-  // BLOCO DE ASSINATURA DIGITAL PROEMINENTE
+  // ASSINATURA DIGITAL CENTRALIZADA & SELO DE CERTIFICAÇÃO CREA
   // =========================================================================
   const sig = report.digitalSignature;
   const isSigEnabled = sig?.enabled ?? false;
@@ -1077,11 +1456,11 @@ export async function generateDocxBlob(
       docChildren.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { before: 80, after: 30 },
+          spacing: { before: 40, after: 20 },
           children: [
             new ImageRun({
               data: sigBytes,
-              transformation: { width: 180, height: 60 },
+              transformation: { width: 175, height: 58 },
               type: 'jpg',
             }),
           ],
@@ -1095,7 +1474,7 @@ export async function generateDocxBlob(
     docChildren.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { before: 120, after: 30 },
+        spacing: { before: 60, after: 20 },
         children: [
           new TextRun({
             text: signerName,
@@ -1110,7 +1489,7 @@ export async function generateDocxBlob(
     );
   }
 
-  // Linha de Assinatura Centralizada
+  // Linha de Assinatura Centralizada e Dados do Engenheiro
   docChildren.push(
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -1131,7 +1510,7 @@ export async function generateDocxBlob(
         new TextRun({
           text: signerName,
           bold: true,
-          size: 19, // 9.5pt
+          size: 18, // 9pt
           color: '0F172A',
           font: 'Arial',
         }),
@@ -1151,7 +1530,7 @@ export async function generateDocxBlob(
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { before: 0, after: 140 },
+      spacing: { before: 0, after: 100 },
       children: [
         new TextRun({
           text: signerArt ? `${signerCrea} | ART: ${signerArt}` : signerCrea,
@@ -1239,15 +1618,216 @@ export async function generateDocxBlob(
   }
 
   // =========================================================================
-  // DOCUMENTO COMPLETO COM HEADER E FOOTER
+  // CABEÇALHO E RODAPÉ OFICIAIS COM TABELA DE LOGO E DADOS DE CONTATO
   // =========================================================================
+  // Header Table: Logo à esquerda + Dados da empresa à direita + Borda inferior
+  const headerCells: TableCell[] = [];
+
+  if (logoDataUrl) {
+    try {
+      const headerLogoBytes = dataUrlToUint8Array(logoDataUrl);
+      headerCells.push(
+        new TableCell({
+          width: { size: 3200, type: WidthType.DXA },
+          verticalAlign: VerticalAlign.CENTER,
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' },
+          },
+          children: [
+            new Paragraph({
+              alignment: AlignmentType.LEFT,
+              children: [
+                new ImageRun({
+                  data: headerLogoBytes,
+                  transformation: { width: 140, height: 48 },
+                  type: 'jpg',
+                }),
+              ],
+            }),
+          ],
+        })
+      );
+    } catch {
+      headerCells.push(
+        new TableCell({
+          width: { size: 3200, type: WidthType.DXA },
+          borders: {
+            top: NO_BORDER,
+            left: NO_BORDER,
+            right: NO_BORDER,
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' },
+          },
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: company.name || 'SJC ENGENHARIA', bold: true, size: 18, color: '0F172A' })],
+            }),
+          ],
+        })
+      );
+    }
+  } else {
+    headerCells.push(
+      new TableCell({
+        width: { size: 3200, type: WidthType.DXA },
+        borders: {
+          top: NO_BORDER,
+          left: NO_BORDER,
+          right: NO_BORDER,
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' },
+        },
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: company.name || 'SJC ENGENHARIA', bold: true, size: 18, color: '0F172A' })],
+          }),
+        ],
+      })
+    );
+  }
+
+  // Dados da Empresa à direita
+  headerCells.push(
+    new TableCell({
+      width: { size: TOTAL_WIDTH_TWIPS - 3200, type: WidthType.DXA },
+      verticalAlign: VerticalAlign.CENTER,
+      borders: {
+        top: NO_BORDER,
+        left: NO_BORDER,
+        right: NO_BORDER,
+        bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' },
+      },
+      children: [
+        new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [
+            new TextRun({
+              text: company.name || 'SJC ENGENHARIA E SOLUÇÕES',
+              bold: true,
+              size: 16, // 8pt
+              color: '0F172A',
+              font: 'Arial',
+            }),
+          ],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [
+            new TextRun({
+              text: `CNPJ: ${company.cnpj || '18.472.071/0001-52'} – Fone: ${company.phone || '(12) 98106-3344'}`,
+              size: 13, // 6.5pt
+              color: '475569',
+              font: 'Arial',
+            }),
+          ],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [
+            new TextRun({
+              text: company.address || 'Rua Isaac Newton, 98 Jd. Oriente – São José dos Campos - SP',
+              size: 13, // 6.5pt
+              color: '475569',
+              font: 'Arial',
+            }),
+          ],
+        }),
+      ],
+    })
+  );
+
+  const headerTable = new Table({
+    width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+    borders: BORDER_NONE_OBJ,
+    rows: [new TableRow({ children: headerCells })],
+  });
+
+  // Footer Table com linha superior, dados do documento e paginação
+  const footerTable = new Table({
+    width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
+    borders: BORDER_NONE_OBJ,
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 6800, type: WidthType.DXA },
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+              bottom: NO_BORDER,
+              left: NO_BORDER,
+              right: NO_BORDER,
+            },
+            margins: { top: 40, bottom: 0, left: 0, right: 0 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: `Laudo SPDA - NBR 5419:2018 | ${client.name || 'Condomínio'}`,
+                    size: 14, // 7pt
+                    color: '475569',
+                    font: 'Arial',
+                  }),
+                ],
+              }),
+            ],
+          }),
+          new TableCell({
+            width: { size: TOTAL_WIDTH_TWIPS - 6800, type: WidthType.DXA },
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+              bottom: NO_BORDER,
+              left: NO_BORDER,
+              right: NO_BORDER,
+            },
+            margins: { top: 40, bottom: 0, left: 0, right: 0 },
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [
+                  new TextRun({
+                    text: 'Página ',
+                    size: 14,
+                    color: '475569',
+                    font: 'Arial',
+                  }),
+                  new TextRun({
+                    children: [PageNumber.CURRENT],
+                    size: 14,
+                    bold: true,
+                    color: '0F172A',
+                    font: 'Arial',
+                  }),
+                  new TextRun({
+                    text: ' de ',
+                    size: 14,
+                    color: '475569',
+                    font: 'Arial',
+                  }),
+                  new TextRun({
+                    children: [PageNumber.TOTAL_PAGES],
+                    size: 14,
+                    bold: true,
+                    color: '0F172A',
+                    font: 'Arial',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+
+  // Montagem final do Documento Word OpenXML (.docx)
   const doc = new Document({
     styles: {
       default: {
         document: {
           run: {
             font: 'Arial',
-            size: 18, // 9pt
+            size: 16, // 8pt padrão
             color: '1E293B',
           },
         },
@@ -1258,8 +1838,8 @@ export async function generateDocxBlob(
         properties: {
           page: {
             size: {
-              width: 11906, // A4 width in twips (210mm)
-              height: 16838, // A4 height in twips (297mm)
+              width: 11906, // A4 = 210mm
+              height: 16838, // A4 = 297mm
             },
             margin: {
               top: 1134, // 20mm
@@ -1271,57 +1851,12 @@ export async function generateDocxBlob(
         },
         headers: {
           default: new Header({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.RIGHT,
-                children: [
-                  new TextRun({
-                    text: `${company.name || 'SJC SERVIÇOS TÉCNICOS'} | LAUDO TÉCNICO DE SPDA - NBR 5419:2018`,
-                    bold: true,
-                    size: 14, // 7pt
-                    color: '64748B',
-                    font: 'Arial',
-                  }),
-                ],
-              }),
-            ],
+            children: [headerTable],
           }),
         },
         footers: {
           default: new Footer({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.RIGHT,
-                children: [
-                  new TextRun({
-                    text: `Laudo SPDA - ${client.name || 'Condomínio'} | Página `,
-                    size: 15,
-                    color: '64748B',
-                    font: 'Arial',
-                  }),
-                  new TextRun({
-                    children: [PageNumber.CURRENT],
-                    size: 15,
-                    color: '0F172A',
-                    bold: true,
-                    font: 'Arial',
-                  }),
-                  new TextRun({
-                    text: ' de ',
-                    size: 15,
-                    color: '64748B',
-                    font: 'Arial',
-                  }),
-                  new TextRun({
-                    children: [PageNumber.TOTAL_PAGES],
-                    size: 15,
-                    color: '0F172A',
-                    bold: true,
-                    font: 'Arial',
-                  }),
-                ],
-              }),
-            ],
+            children: [footerTable],
           }),
         },
         children: docChildren,
@@ -1329,7 +1864,7 @@ export async function generateDocxBlob(
     ],
   });
 
-  onProgress?.(95, 'Finalizando empacotamento do arquivo Word (.docx)...');
+  onProgress?.(95, 'Finalizando empacotamento do documento Word (.docx)...');
 
   const blob = await Packer.toBlob(doc);
   const now = new Date();
