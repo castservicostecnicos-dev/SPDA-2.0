@@ -22,12 +22,53 @@ import {
   ShadingType,
   VerticalAlign,
   TableLayoutType,
+  HorizontalPositionAlign,
+  HorizontalPositionRelativeFrom,
+  VerticalPositionAlign,
+  VerticalPositionRelativeFrom,
+  TextWrappingType,
 } from 'docx';
 import { SpdaReport, PhotoSlot } from '../types/spda';
 import { SJC_OFFICIAL_LOGO_DATA_URL } from '../assets/logo';
 import { generateSequentialDocxFileName } from './storage';
 import { consolidateReportPhotos } from './towerSorter';
-import { safeJpegDataUrl, processPhotoForPdf } from './pdfGenerator';
+import { safeJpegDataUrl, processPhotoForPdf, processHeaderLogo } from './pdfGenerator';
+
+/**
+ * Gera a imagem PNG da marca d'água diagonal "SPDA 2026"
+ * Exatamente igual ao ReportWatermark do ReportPreview e drawWatermark do PDF
+ */
+export function generateWatermarkPngDataUrl(text = 'SPDA 2026'): string {
+  try {
+    if (typeof document === 'undefined') return '';
+    const canvas = document.createElement('canvas');
+    // Canvas A4 em alta definição (1190 x 1684 px)
+    canvas.width = 1190;
+    canvas.height = 1684;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    // Centraliza rigorosamente no meio exato da página A4
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    // Inclinação diagonal em -38 graus (idêntica ao ReportWatermark: -rotate-[38deg])
+    ctx.rotate((-38 * Math.PI) / 180);
+    ctx.font = '900 150px Arial, Helvetica, sans-serif';
+    // Cor cinza suave transparente (rgba(156, 163, 175, 0.18), idêntico a text-[#9ca3af]/20)
+    ctx.fillStyle = 'rgba(156, 163, 175, 0.18)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.letterSpacing = '10px';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+
+    return canvas.toDataURL('image/png');
+  } catch (err) {
+    console.warn('Erro ao gerar marca d\'água para Word:', err);
+    return '';
+  }
+}
 
 /**
  * Converte dataURL (base64) em Uint8Array para uso seguro no docx
@@ -404,7 +445,7 @@ export async function generateDocxBlob(
     measurementJpegs,
     quadrosJpegs,
     equipmentJpeg,
-    logoDataUrl,
+    headerLogoLayout,
     signatureJpeg,
   ] = await Promise.all([
     Promise.all(localPhotos.map((p) => processPhotoForPdf(p, 900, 600, false))),
@@ -412,11 +453,15 @@ export async function generateDocxBlob(
     Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 770, 840, false))),
     Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 770, 840, p.hasRedCircleMarker ?? false))),
     safeJpegDataUrl(report.equipmentPhotoUrl, 600, 400),
-    safeJpegDataUrl(company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL, 500, 200, '#ffffff'),
+    processHeaderLogo(company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL, 45, 18, 192, 8.5),
     report.digitalSignature?.enabled && report.digitalSignature.imageUrl
       ? safeJpegDataUrl(report.digitalSignature.imageUrl, 500, 200, '#ffffff')
       : Promise.resolve(''),
   ]);
+
+  // Gera a imagem da marca d'água diagonal para o meio da tela em todas as páginas (idêntica ao PDF)
+  const watermarkText = company.showWatermark !== false ? (company.watermarkText || 'SPDA 2026') : '';
+  const watermarkPng = watermarkText ? generateWatermarkPngDataUrl(watermarkText) : '';
 
   onProgress?.(70, 'Construindo estrutura de páginas e tabelas em conformidade com a ABNT NBR 5419:2018...');
 
@@ -1618,154 +1663,147 @@ export async function generateDocxBlob(
   }
 
   // =========================================================================
-  // CABEÇALHO E RODAPÉ OFICIAIS COM TABELA DE LOGO E DADOS DE CONTATO
+  // CABEÇALHO IDÊNTICO AO PDF:
+  // 1. Marca D'água diagonal no meio exato da tela em segundo plano
+  // 2. Logo oficial no topo direito (máx 45mm x 18mm), sem textos extras nem bordas
   // =========================================================================
-  // Header Table: Logo à esquerda + Dados da empresa à direita + Borda inferior
-  const headerCells: TableCell[] = [];
+  const headerChildren: Paragraph[] = [];
 
-  if (logoDataUrl) {
+  // 1. Marca D'água diagonal no meio exato da tela (renderizada em todas as páginas atrás do conteúdo)
+  if (watermarkPng) {
     try {
-      const headerLogoBytes = dataUrlToUint8Array(logoDataUrl);
-      headerCells.push(
-        new TableCell({
-          width: { size: 3200, type: WidthType.DXA },
-          verticalAlign: VerticalAlign.CENTER,
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' },
-          },
+      const wmBytes = dataUrlToUint8Array(watermarkPng);
+      headerChildren.push(
+        new Paragraph({
           children: [
-            new Paragraph({
-              alignment: AlignmentType.LEFT,
-              children: [
-                new ImageRun({
-                  data: headerLogoBytes,
-                  transformation: { width: 140, height: 48 },
-                  type: 'jpg',
-                }),
-              ],
+            new ImageRun({
+              data: wmBytes,
+              transformation: {
+                width: 595, // 210mm a 72 pt = 595 pt
+                height: 842, // 297mm a 72 pt = 842 pt
+              },
+              type: 'png',
+              floating: {
+                horizontalPosition: {
+                  relative: HorizontalPositionRelativeFrom.PAGE,
+                  align: HorizontalPositionAlign.CENTER,
+                },
+                verticalPosition: {
+                  relative: VerticalPositionRelativeFrom.PAGE,
+                  align: VerticalPositionAlign.CENTER,
+                },
+                wrap: {
+                  type: TextWrappingType.NONE,
+                },
+                behindDocument: true,
+                allowOverlap: true,
+              },
+            }),
+          ],
+        })
+      );
+    } catch (e) {
+      console.warn('Erro ao inserir marca d\'água no cabeçalho docx:', e);
+    }
+  }
+
+  // 2. Logo Oficial no Topo Direito (máx 45mm x 18mm, alinhado à direita, exatamente como no PDF)
+  if (headerLogoLayout?.dataUrl) {
+    try {
+      const logoBytes = dataUrlToUint8Array(headerLogoLayout.dataUrl);
+      const renderWidthPx = Math.round(headerLogoLayout.width * 3.78);
+      const renderHeightPx = Math.round(headerLogoLayout.height * 3.78);
+
+      headerChildren.push(
+        new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          spacing: { before: 0, after: 80 },
+          children: [
+            new ImageRun({
+              data: logoBytes,
+              transformation: {
+                width: renderWidthPx,
+                height: renderHeightPx,
+              },
+              type: 'png',
             }),
           ],
         })
       );
     } catch {
-      headerCells.push(
-        new TableCell({
-          width: { size: 3200, type: WidthType.DXA },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' },
-          },
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: company.name || 'SJC ENGENHARIA', bold: true, size: 18, color: '0F172A' })],
-            }),
-          ],
+      headerChildren.push(
+        new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [new TextRun({ text: company.name || 'SJC ENGENHARIA', bold: true, size: 16, color: '0F172A' })],
         })
       );
     }
   } else {
-    headerCells.push(
-      new TableCell({
-        width: { size: 3200, type: WidthType.DXA },
-        borders: {
-          top: NO_BORDER,
-          left: NO_BORDER,
-          right: NO_BORDER,
-          bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' },
-        },
-        children: [
-          new Paragraph({
-            children: [new TextRun({ text: company.name || 'SJC ENGENHARIA', bold: true, size: 18, color: '0F172A' })],
-          }),
-        ],
+    headerChildren.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        children: [new TextRun({ text: company.name || 'SJC ENGENHARIA', bold: true, size: 16, color: '0F172A' })],
       })
     );
   }
 
-  // Dados da Empresa à direita
-  headerCells.push(
-    new TableCell({
-      width: { size: TOTAL_WIDTH_TWIPS - 3200, type: WidthType.DXA },
-      verticalAlign: VerticalAlign.CENTER,
-      borders: {
-        top: NO_BORDER,
-        left: NO_BORDER,
-        right: NO_BORDER,
-        bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' },
-      },
-      children: [
-        new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          children: [
-            new TextRun({
-              text: company.name || 'SJC ENGENHARIA E SOLUÇÕES',
-              bold: true,
-              size: 16, // 8pt
-              color: '0F172A',
-              font: 'Arial',
-            }),
-          ],
-        }),
-        new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          children: [
-            new TextRun({
-              text: `CNPJ: ${company.cnpj || '18.472.071/0001-52'} – Fone: ${company.phone || '(12) 98106-3344'}`,
-              size: 13, // 6.5pt
-              color: '475569',
-              font: 'Arial',
-            }),
-          ],
-        }),
-        new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          children: [
-            new TextRun({
-              text: company.address || 'Rua Isaac Newton, 98 Jd. Oriente – São José dos Campos - SP',
-              size: 13, // 6.5pt
-              color: '475569',
-              font: 'Arial',
-            }),
-          ],
-        }),
-      ],
-    })
-  );
-
-  const headerTable = new Table({
-    width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-    borders: BORDER_NONE_OBJ,
-    rows: [new TableRow({ children: headerCells })],
-  });
-
-  // Footer Table com linha superior, dados do documento e paginação
+  // =========================================================================
+  // RODAPÉ IDÊNTICO AO PDF E PREVIEW:
+  // - Linha preta superior (width 170mm)
+  // - Linha 1 (centralizada): SJC ENGENHARIA E SOLUÇÕES - CNPJ: ... – FONE: ...
+  // - Linha 2 (centralizada): RUA ISAAC NEWTON, 98 JD. ORIENTE – SÃO JOSE DOS CAMPOS - SP
+  // - Canto direito da linha 2: Página X de Y
+  // =========================================================================
   const footerTable = new Table({
     width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
     borders: BORDER_NONE_OBJ,
     rows: [
+      // Linha 1 do rodapé com linha preta superior
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 6800, type: WidthType.DXA },
+            columnSpan: 2,
+            width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
             borders: {
-              top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+              top: { style: BorderStyle.SINGLE, size: 2, color: '000000' },
               bottom: NO_BORDER,
               left: NO_BORDER,
               right: NO_BORDER,
             },
-            margins: { top: 40, bottom: 0, left: 0, right: 0 },
+            margins: { top: 40, bottom: 8, left: 0, right: 0 },
             children: [
               new Paragraph({
+                alignment: AlignmentType.CENTER,
                 children: [
                   new TextRun({
-                    text: `Laudo SPDA - NBR 5419:2018 | ${client.name || 'Condomínio'}`,
-                    size: 14, // 7pt
-                    color: '475569',
+                    text: `${company.name || 'SJC ENGENHARIA E SOLUÇÕES'} - CNPJ: ${company.cnpj || '18.472.071/0001-52'} – FONE: ${company.phone || '(12) 98106-3344'}`.toUpperCase(),
+                    bold: true,
+                    size: 15, // 7.5pt
+                    color: '000000',
+                    font: 'Arial',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+      // Linha 2 do rodapé: Endereço centralizado e paginação à direita
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 7600, type: WidthType.DXA },
+            borders: BORDER_NONE_OBJ,
+            margins: { top: 4, bottom: 0, left: 0, right: 0 },
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun({
+                    text: (company.address || 'RUA ISAAC NEWTON, 98 JD. ORIENTE – SÃO JOSE DOS CAMPOS - SP').toUpperCase(),
+                    bold: true,
+                    size: 15, // 7.5pt
+                    color: '000000',
                     font: 'Arial',
                   }),
                 ],
@@ -1773,42 +1811,37 @@ export async function generateDocxBlob(
             ],
           }),
           new TableCell({
-            width: { size: TOTAL_WIDTH_TWIPS - 6800, type: WidthType.DXA },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-              bottom: NO_BORDER,
-              left: NO_BORDER,
-              right: NO_BORDER,
-            },
-            margins: { top: 40, bottom: 0, left: 0, right: 0 },
+            width: { size: TOTAL_WIDTH_TWIPS - 7600, type: WidthType.DXA },
+            borders: BORDER_NONE_OBJ,
+            margins: { top: 4, bottom: 0, left: 0, right: 0 },
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
                     text: 'Página ',
-                    size: 14,
-                    color: '475569',
+                    size: 13, // 6.5pt
+                    color: '64748B',
                     font: 'Arial',
                   }),
                   new TextRun({
                     children: [PageNumber.CURRENT],
-                    size: 14,
+                    size: 13,
                     bold: true,
-                    color: '0F172A',
+                    color: '000000',
                     font: 'Arial',
                   }),
                   new TextRun({
                     text: ' de ',
-                    size: 14,
-                    color: '475569',
+                    size: 13,
+                    color: '64748B',
                     font: 'Arial',
                   }),
                   new TextRun({
                     children: [PageNumber.TOTAL_PAGES],
-                    size: 14,
+                    size: 13,
                     bold: true,
-                    color: '0F172A',
+                    color: '000000',
                     font: 'Arial',
                   }),
                 ],
@@ -1846,12 +1879,14 @@ export async function generateDocxBlob(
               right: 1134, // 20mm
               bottom: 1134, // 20mm
               left: 1134, // 20mm
+              header: 480, // ~8.5mm
+              footer: 480, // ~8.5mm
             },
           },
         },
         headers: {
           default: new Header({
-            children: [headerTable],
+            children: headerChildren,
           }),
         },
         footers: {

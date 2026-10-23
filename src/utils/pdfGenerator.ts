@@ -207,7 +207,7 @@ function chunkArray<T>(array: T[], size: number): T[][] {
   return result;
 }
 
-interface HeaderLogoLayout {
+export interface HeaderLogoLayout {
   dataUrl: string;
   format: 'PNG' | 'JPEG';
   x: number;
@@ -226,7 +226,7 @@ let activeHeaderLogo: HeaderLogoLayout | null = null;
  * - Se for maior na altura: alinha pela altura máxima (18mm) e diminui a largura proporcionalmente.
  * - A imagem NUNCA é cortada. 100% da imagem é preservada sem perder nada.
  */
-async function processHeaderLogo(
+export async function processHeaderLogo(
   url?: string,
   maxWidthMm = 45,
   maxHeightMm = 18,
