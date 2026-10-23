@@ -19,6 +19,7 @@ import { RealFoldersSyncModal } from './components/RealFoldersSyncModal';
 import { DigitalSignatureModal } from './components/DigitalSignatureModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { printReport, generatePdfBlob } from './utils/pdfGenerator';
+import { generateDocxBlob } from './utils/docxGenerator';
 import {
   getConnectedDeviceFolderHandle,
   createCondoFolderTree,
@@ -48,6 +49,7 @@ import {
   Check,
   X,
   Database,
+  FileText,
 } from 'lucide-react';
 import {
   saveReportToStorage,
@@ -78,6 +80,11 @@ export default function App() {
   const [splitView, setSplitView] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<{ percent: number; message: string }>({
+    percent: 0,
+    message: '',
+  });
+  const [isGeneratingDocx, setIsGeneratingDocx] = useState(false);
+  const [docxProgress, setDocxProgress] = useState<{ percent: number; message: string }>({
     percent: 0,
     message: '',
   });
@@ -760,6 +767,48 @@ export default function App() {
     }
   };
 
+  // Automated DOCX generation (Pure docx engine - Editable in Microsoft Word)
+  const handleGenerateDocx = async () => {
+    try {
+      setIsGeneratingDocx(true);
+      setDocxProgress({ percent: 5, message: 'Iniciando criação do documento Word (.docx)...' });
+
+      const { blob, fileName } = await generateDocxBlob(report, (percent, message) => {
+        setDocxProgress({ percent, message });
+      });
+
+      // Trigger direct browser download
+      try {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      } catch (dlErr) {
+        console.warn('Direct docx download error', dlErr);
+      }
+
+      setSaveToast(`✓ Arquivo Word "${fileName}" exportado com sucesso!`);
+      setTimeout(() => setSaveToast(null), 4500);
+    } catch (err: any) {
+      console.error('Erro na exportação para Word (.docx):', err);
+      setConfirmModal({
+        title: 'Falha na Exportação do Word (.docx)',
+        message: `Houve uma falha ao gerar o arquivo Word: ${err?.message || ''}.`,
+        confirmText: 'ENTENDIDO',
+        isDestructive: false,
+        onConfirm: () => {},
+      });
+    } finally {
+      setTimeout(() => {
+        setIsGeneratingDocx(false);
+      }, 500);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col text-slate-800 w-full max-w-full overflow-x-hidden">
       {/* ========================================================
@@ -893,6 +942,17 @@ export default function App() {
             >
               <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
               <span>GERAR PDF</span>
+            </button>
+
+            <button
+              onClick={handleGenerateDocx}
+              disabled={isGeneratingDocx}
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer"
+              title="Exportar laudo para edição completa no Microsoft Word (.docx)"
+            >
+              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="hidden sm:inline">{isGeneratingDocx ? 'GERANDO DOCX...' : 'EXPORTAR DOCX'}</span>
+              <span className="sm:hidden">DOCX</span>
             </button>
 
             {/* Status do Salvamento Manual */}
@@ -1285,10 +1345,19 @@ export default function App() {
                     <button
                       onClick={handleGeneratePdf}
                       disabled={isGeneratingPdf}
-                      className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-colors"
+                      className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
                       BAIXAR PDF
+                    </button>
+                    <button
+                      onClick={handleGenerateDocx}
+                      disabled={isGeneratingDocx}
+                      className="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      title="Exportar laudo editável no Microsoft Word (.docx)"
+                    >
+                      <FileText className="w-4 h-4" />
+                      EXPORTAR DOCX (WORD)
                     </button>
                   </div>
                 </div>
@@ -1338,6 +1407,40 @@ export default function App() {
       )}
 
       {/* ========================================================
+          MODAL DE PROGRESSO DO DOCX (WORD)
+          ======================================================== */}
+      {isGeneratingDocx && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl text-center space-y-4">
+            <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto">
+              <FileText className="w-7 h-7 animate-bounce text-indigo-600" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-slate-800">
+                Criando Arquivo Word (.docx)...
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {docxProgress.message || 'Processando fotos e textos editáveis...'}
+              </p>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200">
+              <div
+                className="bg-indigo-600 h-full rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${docxProgress.percent}%` }}
+              />
+            </div>
+
+            <p className="text-xs font-mono font-bold text-indigo-600">
+              {docxProgress.percent}% concluído
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
           MODAL INTERATIVO COM O PDF GERADO E BOTÕES DE DOWNLOAD
           ======================================================== */}
       {generatedPdf && (
@@ -1347,6 +1450,8 @@ export default function App() {
           pdfUrl={generatedPdf.url}
           fileName={generatedPdf.fileName}
           onPrint={printReport}
+          onExportDocx={handleGenerateDocx}
+          isGeneratingDocx={isGeneratingDocx}
         />
       )}
 

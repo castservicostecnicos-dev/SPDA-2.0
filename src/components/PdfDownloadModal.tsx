@@ -18,6 +18,8 @@ interface PdfDownloadModalProps {
   pdfUrl: string;
   fileName: string;
   onPrint: () => void;
+  onExportDocx?: () => void;
+  isGeneratingDocx?: boolean;
 }
 
 export const PdfDownloadModal: React.FC<PdfDownloadModalProps> = ({
@@ -26,6 +28,8 @@ export const PdfDownloadModal: React.FC<PdfDownloadModalProps> = ({
   pdfUrl,
   fileName,
   onPrint,
+  onExportDocx,
+  isGeneratingDocx,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -142,6 +146,19 @@ export const PdfDownloadModal: React.FC<PdfDownloadModalProps> = ({
               <Download className="w-5 h-5" />
               <span>BAIXAR ARQUIVO PDF AGORA</span>
             </button>
+
+            {onExportDocx && (
+              <button
+                type="button"
+                onClick={onExportDocx}
+                disabled={isGeneratingDocx}
+                className="w-full py-2.5 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold text-xs sm:text-sm rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                title="Baixar arquivo editável no Microsoft Word (.docx)"
+              >
+                <FileText className="w-4 h-4 text-indigo-600" />
+                <span>{isGeneratingDocx ? 'GERANDO ARQUIVO WORD...' : 'BAIXAR TAMBÉM EM WORD (.DOCX EDITÁVEL)'}</span>
+              </button>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <button

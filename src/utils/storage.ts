@@ -402,6 +402,13 @@ export function generateSequentialPdfFileName(clientName?: string, date = new Da
   return `Laudo_SPDA_${condomClean}${torreClean}_${day}-${month}-${year}_${hours}-${minutes}-${seconds}.pdf`;
 }
 
+/**
+ * Gera um nome de arquivo limpo e seguro para download do DOCX (Word)
+ */
+export function generateSequentialDocxFileName(clientName?: string, date = new Date(), torreName?: string): string {
+  return generateSequentialPdfFileName(clientName, date, torreName).replace(/\.pdf$/i, '.docx');
+}
+
 export type SaveReportResult = SavedReportMeta & { updatedReport: SpdaReport };
 
 /**

@@ -20,8 +20,8 @@ const PHOTO_HEIGHT_MM = 48.0; // 4,80 cm de altura fixa
 const PHOTO_GAP_X_MM = 5.33;  // Espaçamento horizontal fixo
 const PHOTO_GAP_Y_MM = 5.0;   // Espaçamento vertical entre linhas
 
-// Converts any image URL (SVG data URL, external URL, PNG, JPG) to a safe JPEG data URL for jsPDF
-async function safeJpegDataUrl(url?: string, width = 540, height = 230, fillBackground = '#ffffff'): Promise<string> {
+// Converts any image URL (SVG data URL, external URL, PNG, JPG) to a safe JPEG data URL for jsPDF / docx
+export async function safeJpegDataUrl(url?: string, width = 540, height = 230, fillBackground = '#ffffff'): Promise<string> {
   if (!url) return '';
 
   return new Promise((resolve) => {
@@ -91,7 +91,7 @@ async function safeJpegDataUrl(url?: string, width = 540, height = 230, fillBack
  * 3. STRICTLY CLIPS all drawing to the photo canvas boundaries (0, 0, width, height) so
  *    the circle CAN NEVER spill outside the image into the document!
  */
-async function processPhotoForPdf(
+export async function processPhotoForPdf(
   photo: PhotoSlot,
   targetWidth = 770, // 38.5mm * 20 (high-res for crisp PDF print)
   targetHeight = 960, // 48.0mm * 20
