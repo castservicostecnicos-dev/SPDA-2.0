@@ -1,0 +1,13 @@
+# Cloudflare Pages Headers
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Long-term caching for immutable assets
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Ensure HTML is fresh
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
