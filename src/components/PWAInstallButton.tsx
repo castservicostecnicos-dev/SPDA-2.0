@@ -1,59 +1,78 @@
 import React, { useState } from 'react';
 import { Smartphone, Download, CheckCircle2, WifiOff, X, Share } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import { AndroidApkModal } from './AndroidApkModal';
 
 export const PWAInstallButton: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, isOnline, install } = usePWAInstall();
+  const [showAndroidModal, setShowAndroidModal] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
   return (
-    <div className="flex items-center gap-1.5">
-      {/* Indicador de Status Offline / Online */}
-      {!isOnline ? (
-        <span
-          className="flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-1 rounded-full animate-pulse whitespace-nowrap"
-          title="O sistema está operando 100% offline. Todas as fotos, dados e laudos continuam sendo salvos normalmente no aparelho."
-        >
-          <WifiOff className="w-3 h-3 text-amber-400" />
-          <span>OFFLINE (100% ATIVO)</span>
-        </span>
-      ) : isInstalled ? (
-        <span
-          className="hidden md:flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
-          title="Aplicativo instalado no celular com suporte offline completo."
-        >
-          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-          <span>APP INSTALADO • OFFLINE PRONTO</span>
-        </span>
-      ) : null}
+    <>
+      <div className="flex items-center gap-1.5">
+        {/* Indicador de Status Offline / Online */}
+        {!isOnline ? (
+          <span
+            className="flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-1 rounded-full animate-pulse whitespace-nowrap"
+            title="O sistema está operando 100% offline. Todas as fotos, dados e laudos continuam sendo salvos normalmente no aparelho."
+          >
+            <WifiOff className="w-3 h-3 text-amber-400" />
+            <span>OFFLINE (100% ATIVO)</span>
+          </span>
+        ) : isInstalled ? (
+          <button
+            type="button"
+            onClick={() => setShowAndroidModal(true)}
+            className="flex items-center gap-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap transition-colors cursor-pointer"
+            title="Aplicativo instalado no celular com suporte offline completo. Clique para opções de APK."
+          >
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            <span className="hidden sm:inline">APP INSTALADO • GERAR APK</span>
+            <span className="sm:hidden">INSTALADO (APK)</span>
+          </button>
+        ) : null}
 
-      {/* Botão de Instalar no Android/Chromium/Desktop */}
-      {isInstallable && (
-        <button
-          type="button"
-          onClick={install}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-xs border border-blue-400/40 transition-all cursor-pointer whitespace-nowrap"
-          title="Instalar este aplicativo no seu celular para abrir direto da tela inicial e usar sem internet"
-        >
-          <Download className="w-3.5 h-3.5 text-amber-300" />
-          <span className="hidden sm:inline">INSTALAR NO CELULAR (OFFLINE)</span>
-          <span className="sm:hidden">INSTALAR APP</span>
-        </button>
-      )}
+        {/* Botão Principal de Instalar no Android / Gerar APK */}
+        {!isInstalled && (
+          <button
+            type="button"
+            onClick={() => setShowAndroidModal(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white shadow-sm border border-emerald-400/40 transition-all cursor-pointer whitespace-nowrap"
+            title="Instalar no Android (WebAPK) ou gerar arquivo .APK para instalação"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-200 shrink-0" />
+            <span className="hidden sm:inline">INSTALAR NO ANDROID / APK</span>
+            <span className="sm:hidden">ANDROID / APK</span>
+            <span className="bg-emerald-400 text-slate-950 text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase">
+              App
+            </span>
+          </button>
+        )}
 
-      {/* Botão de Instalar no iOS (Safari) */}
-      {!isInstalled && isIOS && !isInstallable && (
-        <button
-          type="button"
-          onClick={() => setShowIOSGuide(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-blue-300 border border-blue-500/30 transition-all cursor-pointer whitespace-nowrap"
-          title="Ver como adicionar à tela de início no iPhone"
-        >
-          <Smartphone className="w-3.5 h-3.5 text-blue-400" />
-          <span className="hidden sm:inline">INSTALAR NO IPHONE</span>
-          <span className="sm:hidden">INSTALAR</span>
-        </button>
-      )}
+        {/* Botão secundário específico para iPhone (iOS Safari) */}
+        {!isInstalled && isIOS && (
+          <button
+            type="button"
+            onClick={() => setShowIOSGuide(true)}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-blue-300 border border-blue-500/30 transition-all cursor-pointer whitespace-nowrap"
+            title="Ver como adicionar à tela de início no iPhone"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span className="hidden sm:inline">IPHONE (IOS)</span>
+            <span className="sm:hidden">IOS</span>
+          </button>
+        )}
+      </div>
+
+      {/* Modal Completo de Instalação no Android & Criação de APK */}
+      <AndroidApkModal
+        isOpen={showAndroidModal}
+        onClose={() => setShowAndroidModal(false)}
+        isInstallable={isInstallable}
+        isInstalled={isInstalled}
+        onInstallPrompt={install}
+      />
 
       {/* Modal Guia para iOS Safari */}
       {showIOSGuide && (
@@ -102,6 +121,6 @@ export const PWAInstallButton: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
