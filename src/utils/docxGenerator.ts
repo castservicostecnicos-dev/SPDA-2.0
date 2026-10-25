@@ -133,147 +133,82 @@ function createSectionHeader(title: string): Paragraph {
   });
 }
 
-// Faixa de Subtítulo Cinza / Divisória (ex: "DADOS DA EDIFICAÇÃO / CLIENTE")
-function createSubheaderBanner(title: string, align: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.LEFT): Table {
-  return new Table({
-    width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-    borders: BORDER_NONE_OBJ,
-    rows: [
-      new TableRow({
-        children: [
-          new TableCell({
-            width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-            shading: { fill: 'F1F5F9', type: ShadingType.CLEAR }, // Slate 100
-            margins: { top: 60, bottom: 60, left: 120, right: 120 },
-            children: [
-              new Paragraph({
-                alignment: align,
-                children: [
-                  new TextRun({
-                    text: title,
-                    bold: true,
-                    size: 17, // 8.5pt
-                    color: '0F172A',
-                    font: 'Arial',
-                  }),
-                ],
-              }),
-            ],
-          }),
-        ],
+// Faixa de Subtítulo Cinza / Divisória (100% texto puro editável, nunca tabela ou caixa de texto)
+function createSubheaderBanner(title: string, align: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.LEFT): Paragraph {
+  return new Paragraph({
+    alignment: align,
+    spacing: { before: 160, after: 60 },
+    shading: { fill: 'F1F5F9', type: ShadingType.CLEAR },
+    children: [
+      new TextRun({
+        text: `  ${title}  `,
+        bold: true,
+        size: 17, // 8.5pt
+        color: '0F172A',
+        font: 'Arial',
       }),
     ],
   });
 }
 
-// Caixa de Destaque com borda suave e fundo cinza claro (ex: "OBJETO DA INSPEÇÃO")
-function createHighlightBox(title: string, bodyText: string): Table {
-  return new Table({
-    width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-    borders: BORDER_LIGHT_OBJ,
-    rows: [
-      new TableRow({
-        children: [
-          new TableCell({
-            width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR }, // Slate 50
-            margins: { top: 80, bottom: 80, left: 120, right: 120 },
-            children: [
-              new Paragraph({
-                spacing: { before: 0, after: 30 },
-                children: [
-                  new TextRun({
-                    text: title,
-                    bold: true,
-                    size: 17, // 8.5pt
-                    color: '0F172A',
-                    font: 'Arial',
-                  }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { before: 0, after: 0 },
-                children: [
-                  new TextRun({
-                    text: bodyText,
-                    size: 16, // 8pt
-                    color: '334155', // Slate 700
-                    font: 'Arial',
-                  }),
-                ],
-              }),
-            ],
-          }),
-        ],
-      }),
-    ],
-  });
-}
-
-// Tabela de Dados Estruturados com Linhas Zebradas Suaves
-function createZebraTable(rowsData: Array<[string, string]>, labelColWidthTwips = 2800): Table {
-  const valColWidthTwips = TOTAL_WIDTH_TWIPS - labelColWidthTwips;
-
-  const tableRows = rowsData.map(([label, val], idx) => {
-    const isEven = idx % 2 === 0;
-    const bgFill = isEven ? 'FAFAFA' : 'FFFFFF';
-
-    return new TableRow({
+// Caixa de Destaque formatada com recuo e barra lateral azul (100% texto puro editável, sem tabela)
+function createHighlightBox(title: string, bodyText: string): Paragraph[] {
+  return [
+    new Paragraph({
+      spacing: { before: 100, after: 25 },
+      border: {
+        left: { style: BorderStyle.SINGLE, size: 12, color: '2563EB' },
+      },
+      indent: { left: 160 },
       children: [
-        new TableCell({
-          width: { size: labelColWidthTwips, type: WidthType.DXA },
-          shading: { fill: bgFill, type: ShadingType.CLEAR },
-          margins: { top: 50, bottom: 50, left: 90, right: 90 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: label,
-                  bold: true,
-                  size: 16, // 8pt
-                  color: '1E293B',
-                  font: 'Arial',
-                }),
-              ],
-            }),
-          ],
+        new TextRun({
+          text: title,
+          bold: true,
+          size: 17, // 8.5pt
+          color: '0F172A',
+          font: 'Arial',
         }),
-        new TableCell({
-          width: { size: valColWidthTwips, type: WidthType.DXA },
-          shading: { fill: bgFill, type: ShadingType.CLEAR },
-          margins: { top: 50, bottom: 50, left: 90, right: 90 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: val || '—',
-                  size: 16, // 8pt
-                  color: '334155',
-                  font: 'Arial',
-                }),
-              ],
-            }),
-          ],
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 0, after: 80 },
+      border: {
+        left: { style: BorderStyle.SINGLE, size: 12, color: '2563EB' },
+      },
+      indent: { left: 160 },
+      children: [
+        new TextRun({
+          text: bodyText,
+          size: 16, // 8pt
+          color: '334155', // Slate 700
+          font: 'Arial',
+        }),
+      ],
+    }),
+  ];
+}
+
+// Lista de Dados Estruturados em Texto Puro Editável (sem tabela, o usuário pode apagar/adicionar linhas livremente)
+function createDataListParagraphs(rowsData: Array<[string, string]>): Paragraph[] {
+  return rowsData.map(([label, val]) => {
+    return new Paragraph({
+      spacing: { before: 20, after: 20 },
+      children: [
+        new TextRun({
+          text: `${label} `,
+          bold: true,
+          size: 16, // 8pt
+          color: '1E293B',
+          font: 'Arial',
+        }),
+        new TextRun({
+          text: val || '—',
+          size: 16, // 8pt
+          color: '334155',
+          font: 'Arial',
         }),
       ],
     });
-  });
-
-  return new Table({
-    width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-    rows: tableRows,
   });
 }
 
@@ -468,36 +403,21 @@ export async function generateDocxBlob(
   const docChildren: Array<Paragraph | Table> = [];
 
   // =========================================================================
-  // PÁGINA 1: CAPA EXECUTIVA (IDÊNTICA AO PDF)
+  // PÁGINA 1: CAPA EXECUTIVA (IDÊNTICA AO PDF - 100% TEXTO EDITÁVEL)
   // =========================================================================
   // Faixa Vermelha Superior
   docChildren.push(
-    new Table({
-      width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-      borders: BORDER_NONE_OBJ,
-      rows: [
-        new TableRow({
-          children: [
-            new TableCell({
-              width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-              shading: { fill: 'F3F4F6', type: ShadingType.CLEAR },
-              margins: { top: 60, bottom: 60, left: 100, right: 100 },
-              children: [
-                new Paragraph({
-                  alignment: AlignmentType.CENTER,
-                  children: [
-                    new TextRun({
-                      text: 'LAUDO TÉCNICO PERICIAL DE ENGENHARIA ELÉTRICA',
-                      bold: true,
-                      size: 18, // 9pt
-                      color: 'D9383A', // Vermelho oficial
-                      font: 'Arial',
-                    }),
-                  ],
-                }),
-              ],
-            }),
-          ],
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 40, after: 60 },
+      shading: { fill: 'F3F4F6', type: ShadingType.CLEAR },
+      children: [
+        new TextRun({
+          text: 'LAUDO TÉCNICO PERICIAL DE ENGENHARIA ELÉTRICA',
+          bold: true,
+          size: 18, // 9pt
+          color: 'D9383A', // Vermelho oficial
+          font: 'Arial',
         }),
       ],
     })
@@ -545,12 +465,12 @@ export async function generateDocxBlob(
     })
   );
 
-  // OBJETO DA INSPEÇÃO em Caixa de Destaque
-  docChildren.push(createHighlightBox('OBJETO DA INSPEÇÃO:', texts.objeto));
+  // OBJETO DA INSPEÇÃO em Destaque de Texto Puro
+  docChildren.push(...createHighlightBox('OBJETO DA INSPEÇÃO:', texts.objeto));
 
-  docChildren.push(new Paragraph({ spacing: { before: 100, after: 0 }, children: [] }));
+  docChildren.push(new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }));
 
-  // DADOS DA EDIFICAÇÃO / CLIENTE
+  // DADOS DA EDIFICAÇÃO / CLIENTE (Texto Puro Editável)
   docChildren.push(createSubheaderBanner('DADOS DA EDIFICAÇÃO / CLIENTE'));
 
   const clientInfoRows: Array<[string, string]> = [
@@ -563,11 +483,11 @@ export async function generateDocxBlob(
     ['GRAU DE EXPOSIÇÃO:', client.exposicaoNivel || 'Baixa exposição a descargas atmosféricas'],
   ];
 
-  docChildren.push(createZebraTable(clientInfoRows, 2700));
+  docChildren.push(...createDataListParagraphs(clientInfoRows));
 
-  docChildren.push(new Paragraph({ spacing: { before: 100, after: 0 }, children: [] }));
+  docChildren.push(new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }));
 
-  // DADOS DO RESPONSÁVEL TÉCNICO & EMISSÃO
+  // DADOS DO RESPONSÁVEL TÉCNICO & EMISSÃO (Texto Puro Editável)
   docChildren.push(createSubheaderBanner('RESPONSABILIDADE TÉCNICA & REGISTRO PROFISSIONAL'));
 
   const techInfoRows: Array<[string, string]> = [
@@ -581,7 +501,7 @@ export async function generateDocxBlob(
     techInfoRows.push(['AUTENTICAÇÃO DIGITAL:', 'DOCUMENTO ASSINADO DIGITALMENTE (PÁGINA FINAL)']);
   }
 
-  docChildren.push(createZebraTable(techInfoRows, 3000));
+  docChildren.push(...createDataListParagraphs(techInfoRows));
 
   // Quebra para Página 2
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
@@ -671,71 +591,29 @@ export async function generateDocxBlob(
     );
   });
 
-  // 2) DICIONÁRIO E ABREVIATURAS USADAS NESTE DOCUMENTO (EM 2 COLUNAS)
+  // 2) DICIONÁRIO E ABREVIATURAS USADAS NESTE DOCUMENTO (Texto Puro Editável)
   docChildren.push(
     new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
     createSubheaderBanner('2) DICIONÁRIO E ABREVIATURAS USADAS NESTE DOCUMENTO', AlignmentType.CENTER)
   );
 
-  const dictItems = (texts.dicionario || []).slice(0, 8);
-  const dictRows: TableRow[] = [];
-
-  for (let i = 0; i < dictItems.length; i += 2) {
-    const leftItem = dictItems[i];
-    const rightItem = dictItems[i + 1];
-
-    const isEven = Math.floor(i / 2) % 2 === 0;
-    const bgFill = isEven ? 'F8FAFC' : 'FFFFFF';
-
-    dictRows.push(
-      new TableRow({
+  const dictItems = (texts.dicionario || []).slice(0, 10);
+  dictItems.forEach((dictItem) => {
+    docChildren.push(
+      new Paragraph({
+        spacing: { before: 15, after: 15 },
         children: [
-          new TableCell({
-            width: { size: Math.floor(TOTAL_WIDTH_TWIPS / 2), type: WidthType.DXA },
-            shading: { fill: bgFill, type: ShadingType.CLEAR },
-            margins: { top: 40, bottom: 40, left: 80, right: 80 },
-            borders: BORDER_NONE_OBJ,
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({ text: `${leftItem.termo}: `, bold: true, size: 14, color: '0F172A', font: 'Arial' }),
-                  new TextRun({ text: leftItem.definicao, size: 14, color: '334155', font: 'Arial' }),
-                ],
-              }),
-            ],
-          }),
-          new TableCell({
-            width: { size: Math.floor(TOTAL_WIDTH_TWIPS / 2), type: WidthType.DXA },
-            shading: { fill: bgFill, type: ShadingType.CLEAR },
-            margins: { top: 40, bottom: 40, left: 80, right: 80 },
-            borders: BORDER_NONE_OBJ,
-            children: rightItem
-              ? [
-                  new Paragraph({
-                    children: [
-                      new TextRun({ text: `${rightItem.termo}: `, bold: true, size: 14, color: '0F172A', font: 'Arial' }),
-                      new TextRun({ text: rightItem.definicao, size: 14, color: '334155', font: 'Arial' }),
-                    ],
-                  }),
-                ]
-              : [new Paragraph({ children: [] })],
-          }),
+          new TextRun({ text: `• ${dictItem.termo}: `, bold: true, size: 15, color: '0F172A', font: 'Arial' }),
+          new TextRun({ text: dictItem.definicao, size: 15, color: '334155', font: 'Arial' }),
         ],
       })
     );
-  }
+  });
 
+  // Nota CREA (Texto Puro Editável)
   docChildren.push(
-    new Table({
-      width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-      rows: dictRows,
-    })
-  );
-
-  // Nota CREA
-  docChildren.push(
-    new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
-    createHighlightBox(
+    new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }),
+    ...createHighlightBox(
       'CREA – CONSELHO REGIONAL DE ENGENHARIA E AGRONOMIA',
       'Inspeção realizada por engenheiro legalmente habilitado, com registro ativo e emissão da ART correspondente, assegurando o rigor técnico e legalidade das medições.'
     )
@@ -796,7 +674,7 @@ export async function generateDocxBlob(
     }
   }
 
-  // PARÂMETROS CONSTRUTIVOS
+  // PARÂMETROS CONSTRUTIVOS (Texto Puro Editável)
   docChildren.push(createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419)'));
 
   const parametrosRows: Array<[string, string]> = [
@@ -806,7 +684,7 @@ export async function generateDocxBlob(
     ['Métodos de Proteção Aplicáveis:', 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)'],
   ];
 
-  docChildren.push(createZebraTable(parametrosRows, 3500));
+  docChildren.push(...createDataListParagraphs(parametrosRows));
 
   // Quebra para Página 4
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
@@ -935,10 +813,10 @@ export async function generateDocxBlob(
 
   if (spdaPhotos.length === 0) {
     // Sem fotos: Análise Pericial e Avaliação dos 4 Subsistemas
-    docChildren.push(createHighlightBox('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', texts.vistoriaSpdaAnalise));
-    docChildren.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }));
+    docChildren.push(...createHighlightBox('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', texts.vistoriaSpdaAnalise));
+    docChildren.push(new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }));
   } else {
-    // Primeira página de fotos do SPDA
+    // Primeira página de fotos do SPDA (APENAS AS FOTOS EM TABELA DE 4 COLUNAS)
     docChildren.push(createPhotoGridTable(spdaChunks[0] || [], spdaJpegChunks[0] || [], isMultiTower, false));
 
     // Páginas de continuação se houver mais de 16 fotos
@@ -951,13 +829,13 @@ export async function generateDocxBlob(
     }
 
     docChildren.push(
-      new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
-      createHighlightBox('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', texts.vistoriaSpdaAnalise),
-      new Paragraph({ spacing: { before: 80, after: 0 }, children: [] })
+      new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }),
+      ...createHighlightBox('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', texts.vistoriaSpdaAnalise),
+      new Paragraph({ spacing: { before: 60, after: 0 }, children: [] })
     );
   }
 
-  // Tabela dos 4 Subsistemas Vistoriados
+  // Avaliação dos 4 Subsistemas Vistoriados (Texto Puro Editável)
   docChildren.push(createSubheaderBanner('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419)'));
 
   const subsistemasData = [
@@ -983,73 +861,22 @@ export async function generateDocxBlob(
     },
   ];
 
-  const subRows = subsistemasData.map((sub, sIdx) => {
-    const isEven = sIdx % 2 === 0;
+  subsistemasData.forEach((sub) => {
     const isConforme = sub.status === 'CONFORME';
     const isRequer = sub.status === 'REQUER AJUSTES';
     const statusColor = isConforme ? '15803D' : isRequer ? 'B45309' : 'DC2626';
 
-    return new TableRow({
-      children: [
-        new TableCell({
-          width: { size: 3000, type: WidthType.DXA },
-          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 50, bottom: 50, left: 80, right: 80 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: sub.item, bold: true, size: 16, color: '0F172A', font: 'Arial' })],
-            }),
-          ],
-        }),
-        new TableCell({
-          width: { size: TOTAL_WIDTH_TWIPS - 5200, type: WidthType.DXA },
-          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 50, bottom: 50, left: 80, right: 80 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: sub.desc, size: 15, color: '475569', font: 'Arial' })],
-            }),
-          ],
-        }),
-        new TableCell({
-          width: { size: 2200, type: WidthType.DXA },
-          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 50, bottom: 50, left: 80, right: 80 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: sub.status, bold: true, size: 15, color: statusColor, font: 'Arial' })],
-            }),
-          ],
-        }),
-      ],
-    });
+    docChildren.push(
+      new Paragraph({
+        spacing: { before: 25, after: 25 },
+        children: [
+          new TextRun({ text: `• ${sub.item}: `, bold: true, size: 16, color: '0F172A', font: 'Arial' }),
+          new TextRun({ text: `${sub.desc} `, size: 15, color: '475569', font: 'Arial' }),
+          new TextRun({ text: `[${sub.status}]`, bold: true, size: 15, color: statusColor, font: 'Arial' }),
+        ],
+      })
+    );
   });
-
-  docChildren.push(
-    new Table({
-      width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-      rows: subRows,
-    })
-  );
 
   // Quebra para Seção 6 (Medições)
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
@@ -1112,70 +939,27 @@ export async function generateDocxBlob(
     try {
       const eqBytes = dataUrlToUint8Array(equipmentJpeg);
       docChildren.push(
-        new Table({
-          width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-          borders: BORDER_LIGHT_OBJ,
-          rows: [
-            new TableRow({
-              children: [
-                new TableCell({
-                  width: { size: 3800, type: WidthType.DXA },
-                  shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-                  margins: { top: 60, bottom: 60, left: 60, right: 60 },
-                  verticalAlign: VerticalAlign.CENTER,
-                  borders: BORDER_NONE_OBJ,
-                  children: [
-                    new Paragraph({
-                      alignment: AlignmentType.CENTER,
-                      children: [
-                        new ImageRun({
-                          data: eqBytes,
-                          transformation: { width: 190, height: 135 },
-                          type: 'jpg',
-                        }),
-                      ],
-                    }),
-                  ],
-                }),
-                new TableCell({
-                  width: { size: TOTAL_WIDTH_TWIPS - 3800, type: WidthType.DXA },
-                  shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-                  margins: { top: 80, bottom: 80, left: 100, right: 100 },
-                  borders: BORDER_NONE_OBJ,
-                  children: equipSpecsParagraphs,
-                }),
-              ],
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 60, after: 40 },
+          children: [
+            new ImageRun({
+              data: eqBytes,
+              transformation: { width: 220, height: 150 },
+              type: 'jpg',
             }),
           ],
         })
       );
     } catch {
-      docChildren.push(createHighlightBox('INSTRUMENTO DE MEDIÇÃO:', texts.equipamentoDescricao));
+      docChildren.push(...createHighlightBox('INSTRUMENTO DE MEDIÇÃO:', texts.equipamentoDescricao));
     }
-  } else {
-    docChildren.push(
-      new Table({
-        width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-        borders: BORDER_LIGHT_OBJ,
-        rows: [
-          new TableRow({
-            children: [
-              new TableCell({
-                width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-                shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-                margins: { top: 80, bottom: 80, left: 120, right: 120 },
-                children: equipSpecsParagraphs,
-              }),
-            ],
-          }),
-        ],
-      })
-    );
   }
 
-  docChildren.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }));
+  docChildren.push(...equipSpecsParagraphs);
+  docChildren.push(new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }));
 
-  // PARÂMETROS NORMATIVOS DE CONTINUIDADE
+  // PARÂMETROS NORMATIVOS DE CONTINUIDADE (Texto Puro Editável)
   docChildren.push(createSubheaderBanner('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419/2018)'));
 
   const criteriosData = [
@@ -1205,92 +989,26 @@ export async function generateDocxBlob(
     },
   ];
 
-  const critRows = criteriosData.map((crit, cIdx) => {
-    const isEven = cIdx % 2 === 0;
+  criteriosData.forEach((crit) => {
     const isGood = crit.status === 'CONFORME' || crit.status === 'APLICADO';
     const statusColor = isGood ? '15803D' : 'DC2626';
 
-    return new TableRow({
-      children: [
-        new TableCell({
-          width: { size: 3600, type: WidthType.DXA },
-          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: crit.criterio, bold: true, size: 14, color: '0F172A', font: 'Arial' })],
-            }),
-          ],
-        }),
-        new TableCell({
-          width: { size: 2600, type: WidthType.DXA },
-          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: crit.norma, size: 14, color: '475569', font: 'Arial' })],
-            }),
-          ],
-        }),
-        new TableCell({
-          width: { size: 2000, type: WidthType.DXA },
-          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: crit.limite, bold: true, size: 14, color: '0F172A', font: 'Arial' })],
-            }),
-          ],
-        }),
-        new TableCell({
-          width: { size: 1438, type: WidthType.DXA },
-          shading: { fill: isEven ? 'FAFAFA' : 'FFFFFF', type: ShadingType.CLEAR },
-          margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          borders: {
-            top: NO_BORDER,
-            left: NO_BORDER,
-            right: NO_BORDER,
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
-          },
-          children: [
-            new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: crit.status, bold: true, size: 14, color: statusColor, font: 'Arial' })],
-            }),
-          ],
-        }),
-      ],
-    });
+    docChildren.push(
+      new Paragraph({
+        spacing: { before: 20, after: 20 },
+        children: [
+          new TextRun({ text: `• ${crit.criterio} `, bold: true, size: 15, color: '0F172A', font: 'Arial' }),
+          new TextRun({ text: `(${crit.norma}) — Limite: `, size: 14, color: '475569', font: 'Arial' }),
+          new TextRun({ text: `${crit.limite} `, bold: true, size: 14, color: '0F172A', font: 'Arial' }),
+          new TextRun({ text: `[${crit.status}]`, bold: true, size: 14, color: statusColor, font: 'Arial' }),
+        ],
+      })
+    );
   });
 
-  docChildren.push(
-    new Table({
-      width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
-      rows: critRows,
-    })
-  );
+  docChildren.push(new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }));
 
-  docChildren.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }));
-
-  // Grade de Fotos dos Pontos de Medição (até 8 na página principal, continuação se houver mais)
+  // Grade de Fotos dos Pontos de Medição (APENAS AS FOTOS EM TABELA DE 4 COLUNAS)
   const measurePage1 = measurementPhotos.slice(0, 8);
   const measureJpegsPage1 = measurementJpegs.slice(0, 8);
   const measureRestantes = measurementPhotos.slice(8);
@@ -1315,10 +1033,10 @@ export async function generateDocxBlob(
   } else {
     docChildren.push(
       createSubheaderBanner('METODOLOGIA DE 4 TERMINAIS (KELVIN) E PONTOS DE ENSAIO'),
-      createZebraTable([
-        ['1. Malha de Captação para Descidas Principais', 'Ensaio a 4 fios com injeção DC contínua [CONFORME]'],
-        ['2. Descidas para Caixas de Equalização / BEP', 'Conexões mecânicas ensaiadas sob carga [CONFORME]'],
-        ['3. Malha de Aterramento para Estruturas Metálicas', 'Equipotencialização de massas da edificação [CONFORME]'],
+      ...createDataListParagraphs([
+        ['• 1. Malha de Captação para Descidas Principais:', 'Ensaio a 4 fios com injeção DC contínua [CONFORME]'],
+        ['• 2. Descidas para Caixas de Equalização / BEP:', 'Conexões mecânicas ensaiadas sob carga [CONFORME]'],
+        ['• 3. Malha de Aterramento para Estruturas Metálicas:', 'Equipotencialização de massas da edificação [CONFORME]'],
       ])
     );
   }
@@ -1393,7 +1111,7 @@ export async function generateDocxBlob(
   if (texts.analiseQuadrosConclusao) {
     docChildren.push(
       new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
-      createHighlightBox('PARECER TÉCNICO SOBRE OS DISPOSITIVOS DPS E BARRAMENTOS:', texts.analiseQuadrosConclusao)
+      ...createHighlightBox('PARECER TÉCNICO SOBRE OS DISPOSITIVOS DPS E BARRAMENTOS:', texts.analiseQuadrosConclusao)
     );
   }
 
@@ -1461,7 +1179,7 @@ export async function generateDocxBlob(
 
   // DISPOSIÇÕES FINAIS & VALIDADE DA INSPEÇÃO
   docChildren.push(
-    createHighlightBox(
+    ...createHighlightBox(
       'DISPOSIÇÕES FINAIS & VALIDADE DA INSPEÇÃO:',
       'Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2018 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.'
     )
@@ -1588,78 +1306,54 @@ export async function generateDocxBlob(
     })
   );
 
-  // Selo de Autenticação Digital e Validação ICP / CREA
+  // Selo de Autenticação Digital e Validação ICP / CREA (100% texto puro editável, sem tabelas)
   if (isSigEnabled && sig?.showValidationStamp) {
-    const certTable = new Table({
-      width: { size: 6800, type: WidthType.DXA },
-      alignment: AlignmentType.CENTER,
-      borders: {
-        top: { style: BorderStyle.SINGLE, size: 2, color: '2563EB' },
-        bottom: { style: BorderStyle.SINGLE, size: 2, color: '2563EB' },
-        left: { style: BorderStyle.SINGLE, size: 2, color: '2563EB' },
-        right: { style: BorderStyle.SINGLE, size: 2, color: '2563EB' },
-      },
-      rows: [
-        new TableRow({
-          children: [
-            new TableCell({
-              width: { size: 6800, type: WidthType.DXA },
-              shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-              margins: { top: 80, bottom: 80, left: 120, right: 120 },
-              children: [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: '✓ CERTIFICAÇÃO DIGITAL - PADRÃO CREA / NBR 5419:2018',
-                      bold: true,
-                      size: 15,
-                      color: '1E3A8A',
-                      font: 'Arial',
-                    }),
-                  ],
-                }),
-                new Paragraph({
-                  spacing: { before: 20, after: 10 },
-                  children: [
-                    new TextRun({
-                      text: `Signatário: ${signerName} (${signerCrea})`,
-                      size: 14,
-                      color: '334155',
-                      font: 'Arial',
-                    }),
-                  ],
-                }),
-                new Paragraph({
-                  spacing: { before: 0, after: 10 },
-                  children: [
-                    new TextRun({
-                      text: `Data/Hora: ${sig.signedAt || client.dataEmissaoExtenso || 'Registrado com ART'}${signerArt ? ` • ART: ${signerArt}` : ''}`,
-                      size: 14,
-                      color: '334155',
-                      font: 'Arial',
-                    }),
-                  ],
-                }),
-                new Paragraph({
-                  spacing: { before: 0, after: 0 },
-                  children: [
-                    new TextRun({
-                      text: `Hash SHA-256: ${sig.hashSha256 || 'VALID-SIGNATURE'}`,
-                      bold: true,
-                      size: 13,
-                      color: '64748B',
-                      font: 'Courier New',
-                    }),
-                  ],
-                }),
-              ],
-            }),
-          ],
-        }),
-      ],
-    });
-
-    docChildren.push(certTable);
+    docChildren.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 80, after: 15 },
+        border: {
+          top: { style: BorderStyle.SINGLE, size: 4, color: '2563EB' },
+        },
+        children: [
+          new TextRun({
+            text: '✓ CERTIFICAÇÃO DIGITAL - PADRÃO CREA / NBR 5419:2018',
+            bold: true,
+            size: 15,
+            color: '1E3A8A',
+            font: 'Arial',
+          }),
+        ],
+      }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 10 },
+        children: [
+          new TextRun({
+            text: `Signatário: ${signerName} (${signerCrea}) • Data/Hora: ${sig.signedAt || client.dataEmissaoExtenso || 'Registrado com ART'}${signerArt ? ` • ART: ${signerArt}` : ''}`,
+            size: 14,
+            color: '334155',
+            font: 'Arial',
+          }),
+        ],
+      }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 40 },
+        border: {
+          bottom: { style: BorderStyle.SINGLE, size: 4, color: '2563EB' },
+        },
+        children: [
+          new TextRun({
+            text: `Hash SHA-256: ${sig.hashSha256 || 'VALID-SIGNATURE'}`,
+            bold: true,
+            size: 13,
+            color: '64748B',
+            font: 'Courier New',
+          }),
+        ],
+      })
+    );
   }
 
   // =========================================================================
