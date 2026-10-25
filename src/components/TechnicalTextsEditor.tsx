@@ -88,7 +88,7 @@ export const TechnicalTextsEditor: React.FC<TechnicalTextsEditorProps> = ({
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-800">
-              Textos Técnicos Pré-Formatados (NBR 5419:2018)
+              Textos Técnicos Pré-Formatados (NBR 5419:2026)
             </h3>
             <p className="text-xs text-slate-500">
               Você pode personalizar qualquer redação técnica, exportar seu padrão ou importar novos modelos.

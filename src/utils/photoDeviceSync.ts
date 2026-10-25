@@ -1392,7 +1392,7 @@ export async function ensureRealDocumentFoldersCreated(
       const infoFile = await condoHandle.getFileHandle('INFORMACOES_DO_LAUDO.txt', { create: true });
       const infoWriter = await infoFile.createWritable();
       const infoText = [
-        `LAUDOS SPDA - NBR 5419:2018`,
+        `LAUDOS SPDA - NBR 5419:2026`,
         `Condomínio: ${report.client.name || 'Condomínio'}`,
         `Data da Vistoria: ${report.client.periodoAvaliacao || new Date().toLocaleDateString('pt-BR')}`,
         `Última Sincronização Incremental: ${timeFormatted} (${now.toLocaleDateString('pt-BR')})`,
@@ -1569,7 +1569,7 @@ export async function createCondoFolderTree(
       const infoFile = await condoHandle.getFileHandle('ESTRUTURA_DO_CONDOMINIO.txt', { create: true });
       const writer = await infoFile.createWritable();
       const txt = [
-        `LAUDOS SPDA - ESTRUTURA DO CONDOMÍNIO (NBR 5419)`,
+        `LAUDOS SPDA - ESTRUTURA DO CONDOMÍNIO (NBR 5419:2026)`,
         `Condomínio: ${condoName || 'Condomínio'}`,
         `Data de Criação: ${new Date().toLocaleString('pt-BR')}`,
         `Torres Vistoriadas: ${safeTowers.join(', ')}`,

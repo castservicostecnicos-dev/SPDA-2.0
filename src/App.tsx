@@ -827,7 +827,7 @@ export default function App() {
                   Laudo de SPDA
                 </h1>
                 <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-400/30 px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap">
-                  NBR 5419:2018
+                  NBR 5419:2026
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-slate-400 truncate max-w-[170px] sm:max-w-xs">
@@ -1104,7 +1104,7 @@ export default function App() {
               Proteção Ativa: Salvo no Aparelho (Offline a cada 60s)
             </span>
             <span className="hidden md:inline">
-              Laudo Técnico Consolidado: <span className="font-bold text-slate-700">Formato A4 Alta Densidade • NBR 5419:2018</span>
+              Laudo Técnico Consolidado: <span className="font-bold text-slate-700">Formato A4 Alta Densidade • NBR 5419:2026</span>
             </span>
           </div>
         </div>

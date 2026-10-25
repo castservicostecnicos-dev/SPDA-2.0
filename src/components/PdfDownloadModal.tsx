@@ -84,7 +84,7 @@ export const PdfDownloadModal: React.FC<PdfDownloadModalProps> = ({
                 Laudo Gerado com Sucesso!
               </h3>
               <p className="text-xs text-blue-200">
-                Documento técnico conforme ABNT NBR 5419:2018
+                Documento técnico conforme ABNT NBR 5419:2026
               </p>
             </div>
           </div>

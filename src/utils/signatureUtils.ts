@@ -16,7 +16,7 @@ export function generateSignatureHash(
   art: string = '',
   timestamp: string = ''
 ): string {
-  const seed = `${name.trim().toUpperCase()}|${crea.trim().toUpperCase()}|${art.trim()}|${timestamp}|NBR5419:2018`;
+  const seed = `${name.trim().toUpperCase()}|${crea.trim().toUpperCase()}|${art.trim()}|${timestamp}|NBR5419:2026`;
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
 

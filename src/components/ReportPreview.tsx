@@ -157,7 +157,7 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
               SISTEMA DE PROTEÇÃO CONTRA DESCARGAS ATMOSFÉRICAS (SPDA)
             </h1>
             <p className="text-[10px] font-medium text-slate-600 text-center mb-3.5">
-              Inspeção Visual, Medições de Continuidade Ôhmica & Avaliação NBR 5419/2018
+              Inspeção Visual, Medições de Continuidade Ôhmica & Avaliação NBR 5419:2026
             </p>
 
             {/* Objeto Box */}
@@ -254,14 +254,14 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
           <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2 text-justify font-sans">
             <h2 className="text-[11.5px] font-bold text-slate-900 mb-1 font-sans">1) INTRODUÇÃO</h2>
             <p>
-              <span className="font-bold">1.1-</span> Este LAUDO tem como objetivo fazer uma avaliação sucinta do SPDA existente na edificação do {client.name}, verificar o estado de conservação das peças e acessórios e checar a sua conformidade com a norma técnica NBR 5419/2018 da ABNT em vigência. <span className="font-bold">1.2-</span> Serão apresentadas as sugestões técnicas necessárias para conformidade à norma e apresentados desenhos e/ou detalhes caso seja necessário.
+              <span className="font-bold">1.1-</span> Este LAUDO tem como objetivo fazer uma avaliação sucinta do SPDA existente na edificação do {client.name}, verificar o estado de conservação das peças e acessórios e checar a sua conformidade com a norma técnica NBR 5419:2026 da ABNT em vigência. <span className="font-bold">1.2-</span> Serão apresentadas as sugestões técnicas necessárias para conformidade à norma e apresentados desenhos e/ou detalhes caso seja necessário.
             </p>
             <p>
               <span className="font-bold">1.3-</span> A avaliação apresentada neste laudo teve como base as inspeções e medições efetuadas nas instalações e por informações obtidas junto a colaboradores e engenheiros da SJC Engenharia.
             </p>
             <div>
               <p>
-                <span className="font-bold">1.4-</span> Segundo a ABNT NBR 5419-1:2018, Proteção contra descargas atmosféricas – Parte 1: Princípios Gerais, item 9.4.1.2, as funções do SPDA externo são:
+                <span className="font-bold">1.4-</span> Segundo a ABNT NBR 5419-1:2026, Proteção contra descargas atmosféricas – Parte 1: Princípios Gerais, item 9.4.1.2, as funções do SPDA externo são:
               </p>
               <div className="pl-3 mt-0.5 space-y-0.5 text-[9px]">
                 <p>a) Interceptar uma descarga atmosférica para a estrutura (com um subsistema de captação);</p>
@@ -386,7 +386,7 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                   {/* Quadro Técnico de Infraestrutura */}
                   <div className="my-2 border border-slate-200 rounded overflow-hidden">
                     <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
-                      PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419)
+                      PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)
                     </div>
                     <div className="divide-y divide-slate-100 text-[8.5px]">
                       <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
@@ -399,7 +399,7 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                       </div>
                       <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
                         <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Nível de Proteção Dimensionado:</span>
-                        <span className="font-bold text-blue-700 text-right flex-shrink-0 max-w-[55%] break-words">Nível III / IV (NBR 5419-2 - Gerenciamento de Risco)</span>
+                        <span className="font-bold text-blue-700 text-right flex-shrink-0 max-w-[55%] break-words">Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)</span>
                       </div>
                       <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
                         <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Métodos de Proteção Aplicáveis:</span>
@@ -507,7 +507,7 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                 ) : (
                   <div className="my-2 border border-slate-200 rounded overflow-hidden">
                     <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
-                      PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419)
+                      PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)
                     </div>
                     <div className="divide-y divide-slate-100 text-[8.5px]">
                       <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
@@ -520,7 +520,7 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                       </div>
                       <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
                         <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Nível de Proteção Dimensionado:</span>
-                        <span className="font-bold text-blue-700 text-right flex-shrink-0 max-w-[55%] break-words">Nível III / IV (NBR 5419-2 - Gerenciamento de Risco)</span>
+                        <span className="font-bold text-blue-700 text-right flex-shrink-0 max-w-[55%] break-words">Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)</span>
                       </div>
                       <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
                         <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Métodos de Proteção Aplicáveis:</span>
@@ -636,7 +636,7 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
             {/* Tabela dos 4 Subsistemas Vistoriados */}
             <div className="border border-slate-200 rounded overflow-hidden">
               <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
-                AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419)
+                AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419:2026)
               </div>
               <div className="divide-y divide-slate-100 text-[8.5px]">
                 {[
@@ -796,20 +796,20 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
             {/* Parâmetros Normativos NBR 5419 */}
             <div className="border border-slate-200 rounded overflow-hidden">
               <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
-                PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419/2018)
+                PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)
               </div>
               <div className="divide-y divide-slate-100 text-[8.5px]">
                 <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
                   <div className="flex-1 min-w-0 pr-1">
                     <span className="font-bold text-slate-900 break-words">Continuidade de Armaduras e Malhas: </span>
-                    <span className="text-slate-600 break-words">NBR 5419-3:2018 (Item 5.3.5)</span>
+                    <span className="text-slate-600 break-words">NBR 5419-3:2026 (Item 5.3.5)</span>
                   </div>
                   <span className="font-bold text-emerald-700 flex-shrink-0 text-right whitespace-nowrap">≤ 0,200 Ω (200 mΩ) [CONFORME]</span>
                 </div>
                 <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
                   <div className="flex-1 min-w-0 pr-1">
                     <span className="font-bold text-slate-900 break-words">Resistência de Equipotencialização: </span>
-                    <span className="text-slate-600 break-words">NBR 5419-3:2018 (Item 6.2)</span>
+                    <span className="text-slate-600 break-words">NBR 5419-3:2026 (Item 6.2)</span>
                   </div>
                   <span className="font-bold text-emerald-700 flex-shrink-0 text-right whitespace-nowrap">≤ 0,200 Ω (200 mΩ) [CONFORME]</span>
                 </div>
@@ -1192,7 +1192,7 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                 DISPOSIÇÕES FINAIS & VALIDADE DA INSPEÇÃO:
               </p>
               <p className="text-[8.5px] text-slate-600 leading-snug break-words">
-                Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2018 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.
+                Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2026 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.
               </p>
             </div>
 
@@ -1239,7 +1239,7 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                     <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-1">
                       <span className="font-black text-blue-950 uppercase tracking-wider text-[8px] flex items-center gap-1">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                        CERTIFICAÇÃO DIGITAL - PADRÃO CREA / NBR 5419:2018
+                        CERTIFICAÇÃO DIGITAL - PADRÃO CREA / NBR 5419:2026
                       </span>
                       <span className="text-emerald-800 font-extrabold bg-emerald-100 border border-emerald-300 px-1.5 py-0.2 rounded text-[7px] uppercase">
                         ✓ Autenticado

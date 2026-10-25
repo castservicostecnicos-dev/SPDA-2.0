@@ -55,13 +55,13 @@ export const InspectionConditionsEditor: React.FC<InspectionConditionsEditorProp
       // If 100% compliant, set conform recommendations or clear
       onUpdateTexts({
         recomendacoes: [
-          'Manter inspeções visuais anuais conforme exigido pela ABNT NBR 5419-3:2018.',
+          'Manter inspeções visuais anuais conforme exigido pela ABNT NBR 5419-3:2026.',
           'Manter a limpeza periódica das caixas de inspeção e conexões de aterramento.',
         ],
         recomendacoesTextoFinal:
           'O sistema encontra-se operando em plena conformidade com as normas vigentes.',
         conclusaoFinal:
-          'Conforme descrito no decorrer deste relatório, podemos concluir que as áreas inspecionadas encontram-se em condições técnicas plenamente adequadas e satisfatórias no que se refere ao Sistema de Proteção Contra Descargas Atmosféricas segundo a norma NBR 5419-2018. As malhas de aterramento e captores atendem aos projetos executivos e normas vigentes. Este é meu parecer sob a ART em anexo.',
+          'Conforme descrito no decorrer deste relatório, podemos concluir que as áreas inspecionadas encontram-se em condições técnicas plenamente adequadas e satisfatórias no que se refere ao Sistema de Proteção Contra Descargas Atmosféricas segundo a norma NBR 5419:2026. As malhas de aterramento e captores atendem aos projetos executivos e normas vigentes. Este é meu parecer sob a ART em anexo.',
       });
     } else {
       // Restore default recommendations from the standard report
@@ -70,7 +70,7 @@ export const InspectionConditionsEditor: React.FC<InspectionConditionsEditorProp
         recomendacoesTextoFinal:
           'Fazer a correção de todos os itens apontados neste relatório, de forma ao sistema operar em sua perfeita harmonia.',
         conclusaoFinal:
-          'Conforme descrito no decorrer deste relatório, excluindo-se as observações efetuadas neste documento, podemos concluir que as áreas inspecionadas na relação anexa, estão em condições técnicas adequadas e satisfatórias no que se refere ao Sistema de Proteção Contra Descargas Atmosféricas da norma NBR 5419-2018, quanto aos aspectos de instalação e segurança. Por fim, concluo que as malhas de aterramento e as malhas superiores do sistema de proteção contra descargas atmosféricas em análise atendem aos requisitos dos projetos executivos e normas vigentes citadas no item 01 deste relatório. Este é meu parecer sob a ART em anexo.',
+          'Conforme descrito no decorrer deste relatório, excluindo-se as observações efetuadas neste documento, podemos concluir que as áreas inspecionadas na relação anexa, estão em condições técnicas adequadas e satisfatórias no que se refere ao Sistema de Proteção Contra Descargas Atmosféricas da norma NBR 5419:2026, quanto aos aspectos de instalação e segurança. Por fim, concluo que as malhas de aterramento e as malhas superiores do sistema de proteção contra descargas atmosféricas em análise atendem aos requisitos dos projetos executivos e normas vigentes citadas no item 01 deste relatório. Este é meu parecer sob a ART em anexo.',
       });
     }
   };
@@ -191,7 +191,7 @@ export const InspectionConditionsEditor: React.FC<InspectionConditionsEditorProp
       {/* 1. SELETOR MESTRE: TEM OU NÃO TEM PONTO PARA CORRIGIR */}
       <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-6">
         <h3 className="text-base font-bold text-slate-900 mb-2">
-          Status de Correções do Condomínio (NBR 5419:2018)
+          Status de Correções do Condomínio (NBR 5419:2026)
         </h3>
         <p className="text-xs text-slate-500 mb-4">
           Defina com 1 clique se o laudo conterá as recomendações corretivas (como no condomínio do modelo) ou se está 100% aprovado.

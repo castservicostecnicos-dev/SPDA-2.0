@@ -398,7 +398,7 @@ export async function generateDocxBlob(
   const watermarkText = company.showWatermark !== false ? (company.watermarkText || 'SPDA 2026') : '';
   const watermarkPng = watermarkText ? generateWatermarkPngDataUrl(watermarkText) : '';
 
-  onProgress?.(70, 'Construindo estrutura de páginas e tabelas em conformidade com a ABNT NBR 5419:2018...');
+  onProgress?.(70, 'Construindo estrutura de páginas e tabelas em conformidade com a ABNT NBR 5419:2026...');
 
   const docChildren: Array<Paragraph | Table> = [];
 
@@ -456,7 +456,7 @@ export async function generateDocxBlob(
       spacing: { before: 0, after: 140 },
       children: [
         new TextRun({
-          text: 'Inspeção Visual, Medições de Continuidade Ôhmica & Avaliação NBR 5419/2018',
+          text: 'Inspeção Visual, Medições de Continuidade Ôhmica & Avaliação NBR 5419:2026',
           size: 18, // 9pt
           color: '475569',
           font: 'Arial',
@@ -512,9 +512,9 @@ export async function generateDocxBlob(
   docChildren.push(createSectionHeader('1) INTRODUÇÃO'));
 
   const introParagraphs = [
-    `1.1- Este LAUDO tem como objetivo fazer uma avaliação sucinta do SPDA existente na edificação do ${client.name}, verificar o estado de conservação das peças e acessórios e checar a sua conformidade com a norma técnica NBR 5419/2018 da ABNT em vigência. 1.2- Serão apresentadas as sugestões técnicas necessárias para conformidade à norma e apresentados desenhos e/ou detalhes caso seja necessário.`,
+    `1.1- Este LAUDO tem como objetivo fazer uma avaliação sucinta do SPDA existente na edificação do ${client.name}, verificar o estado de conservação das peças e acessórios e checar a sua conformidade com a norma técnica NBR 5419:2026 da ABNT em vigência. 1.2- Serão apresentadas as sugestões técnicas necessárias para conformidade à norma e apresentados desenhos e/ou detalhes caso seja necessário.`,
     `1.3- A avaliação apresentada neste laudo teve como base as inspeções e medições efetuadas nas instalações e por informações obtidas junto a colaboradores e engenheiros da SJC Engenharia.`,
-    `1.4- Segundo a ABNT NBR 5419-1:2018, Proteção contra descargas atmosféricas – Parte 1: Princípios Gerais, item 9.4.1.2, as funções do SPDA externo são:`,
+    `1.4- Segundo a ABNT NBR 5419-1:2026, Proteção contra descargas atmosféricas – Parte 1: Princípios Gerais, item 9.4.1.2, as funções do SPDA externo são:`,
   ];
 
   introParagraphs.forEach((pText) => {
@@ -675,12 +675,12 @@ export async function generateDocxBlob(
   }
 
   // PARÂMETROS CONSTRUTIVOS (Texto Puro Editável)
-  docChildren.push(createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419)'));
+  docChildren.push(createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)'));
 
   const parametrosRows: Array<[string, string]> = [
     ['Tipologia Construtiva:', 'Alvenaria Convencional / Estrutura em Concreto Armado'],
     ['Topografia & Entorno:', 'Terreno Urbano Plano com Edificações Vizinhas'],
-    ['Nível de Proteção Dimensionado:', 'Nível III / IV (NBR 5419-2 - Gerenciamento de Risco)'],
+    ['Nível de Proteção Dimensionado:', 'Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)'],
     ['Métodos de Proteção Aplicáveis:', 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)'],
   ];
 
@@ -836,7 +836,7 @@ export async function generateDocxBlob(
   }
 
   // Avaliação dos 4 Subsistemas Vistoriados (Texto Puro Editável)
-  docChildren.push(createSubheaderBanner('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419)'));
+  docChildren.push(createSubheaderBanner('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419:2026)'));
 
   const subsistemasData = [
     {
@@ -960,18 +960,18 @@ export async function generateDocxBlob(
   docChildren.push(new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }));
 
   // PARÂMETROS NORMATIVOS DE CONTINUIDADE (Texto Puro Editável)
-  docChildren.push(createSubheaderBanner('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419/2018)'));
+  docChildren.push(createSubheaderBanner('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)'));
 
   const criteriosData = [
     {
       criterio: 'Continuidade de Armaduras e Malhas',
-      norma: 'NBR 5419-3:2018 (Item 5.3.5)',
+      norma: 'NBR 5419-3:2026 (Item 5.3.5)',
       limite: '≤ 0,200 Ω (200 mΩ)',
       status: conditions.continuidadeAprovada ? 'CONFORME' : 'ATENÇÃO',
     },
     {
       criterio: 'Resistência de Equipotencialização',
-      norma: 'NBR 5419-3:2018 (Item 6.2)',
+      norma: 'NBR 5419-3:2026 (Item 6.2)',
       limite: '≤ 0,200 Ω (200 mΩ)',
       status: 'CONFORME',
     },
@@ -1123,7 +1123,7 @@ export async function generateDocxBlob(
   // =========================================================================
   docChildren.push(createSectionHeader('8) CORREÇÕES NECESSÁRIAS PARA PROTEÇÃO DAS EDIFICAÇÕES'));
 
-  docChildren.push(createSubheaderBanner('Recomendações Técnicas Prioritárias (NBR 5419:2018)', AlignmentType.CENTER));
+  docChildren.push(createSubheaderBanner('Recomendações Técnicas Prioritárias (NBR 5419:2026)', AlignmentType.CENTER));
 
   (texts.recomendacoes || []).forEach((rec, rIdx) => {
     docChildren.push(
@@ -1181,7 +1181,7 @@ export async function generateDocxBlob(
   docChildren.push(
     ...createHighlightBox(
       'DISPOSIÇÕES FINAIS & VALIDADE DA INSPEÇÃO:',
-      'Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2018 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.'
+      'Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2026 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.'
     )
   );
 
@@ -1317,7 +1317,7 @@ export async function generateDocxBlob(
         },
         children: [
           new TextRun({
-            text: '✓ CERTIFICAÇÃO DIGITAL - PADRÃO CREA / NBR 5419:2018',
+            text: '✓ CERTIFICAÇÃO DIGITAL - PADRÃO CREA / NBR 5419:2026',
             bold: true,
             size: 15,
             color: '1E3A8A',

@@ -625,7 +625,7 @@ export const RealFoldersSyncModal: React.FC<RealFoldersSyncModalProps> = ({
                   Estrutura de Pastas Criada no Disco do Dispositivo:
                 </span>
                 <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
-                  NBR 5419:2018
+                  NBR 5419:2026
                 </span>
               </div>
 

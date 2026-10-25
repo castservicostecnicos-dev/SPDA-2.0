@@ -1,6 +1,6 @@
 {
   "name": "Gerador SPDA  3",
-  "description": "Sistema profissional para elaboração de laudos de SPDA segundo a NBR 5419:2018 com dados do cliente, fotos de quadros, pontos de inspeção e SPDA existente, e geração automática de PDF.",
+  "description": "Sistema profissional para elaboração de laudos de SPDA segundo a NBR 5419:2026 com dados do cliente, fotos de quadros, pontos de inspeção e SPDA existente, e geração automática de PDF.",
   "requestFramePermissions": [
     "camera"
   ],

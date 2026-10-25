@@ -452,7 +452,7 @@ export const generatePdfBlob = async (
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(9);
   pdf.setTextColor(71, 85, 105);
-  pdf.text('Inspeção Visual, Medições de Continuidade Ôhmica & Avaliação NBR 5419/2018', 105, 70, { align: 'center' });
+  pdf.text('Inspeção Visual, Medições de Continuidade Ôhmica & Avaliação NBR 5419:2026', 105, 70, { align: 'center' });
 
   // OBJETO em caixa destacada
   pdf.setFillColor(248, 250, 252);
@@ -573,13 +573,13 @@ export const generatePdfBlob = async (
   pdf.setFontSize(7.6);
   pdf.setTextColor(30, 41, 59);
 
-  const intro1 = `1.1- Este LAUDO tem como objetivo fazer uma avaliação sucinta do SPDA existente na edificação do ${client.name}, verificar o estado de conservação das peças e acessórios e checar a sua conformidade com a norma técnica NBR 5419/2018 da ABNT em vigência. 1.2- Serão apresentadas as sugestões técnicas necessárias para conformidade à norma e apresentados desenhos e/ou detalhes caso seja necessário.`;
+  const intro1 = `1.1- Este LAUDO tem como objetivo fazer uma avaliação sucinta do SPDA existente na edificação do ${client.name}, verificar o estado de conservação das peças e acessórios e checar a sua conformidade com a norma técnica NBR 5419:2026 da ABNT em vigência. 1.2- Serão apresentadas as sugestões técnicas necessárias para conformidade à norma e apresentados desenhos e/ou detalhes caso seja necessário.`;
   pdf.text(pdf.splitTextToSize(intro1, contentWidth), marginX, 41);
 
   const intro2 = `1.3- A avaliação apresentada neste laudo teve como base as inspeções e medições efetuadas nas instalações e por informações obtidas junto a colaboradores e engenheiros da SJC Engenharia.`;
   pdf.text(pdf.splitTextToSize(intro2, contentWidth), marginX, 52);
 
-  const intro3 = `1.4- Segundo a ABNT NBR 5419-1:2018, Proteção contra descargas atmosféricas – Parte 1: Princípios Gerais, item 9.4.1.2, as funções do SPDA externo são:\na) Interceptar uma descarga atmosférica para a estrutura (com um subsistema de captação);\nb) Conduzir a corrente da descarga atmosférica seguramente para a terra (com um subsistema de descida);\nc) Dispersar esta corrente na terra (com um subsistema de aterramento).`;
+  const intro3 = `1.4- Segundo a ABNT NBR 5419-1:2026, Proteção contra descargas atmosféricas – Parte 1: Princípios Gerais, item 9.4.1.2, as funções do SPDA externo são:\na) Interceptar uma descarga atmosférica para a estrutura (com um subsistema de captação);\nb) Conduzir a corrente da descarga atmosférica seguramente para a terra (com um subsistema de descida);\nc) Dispersar esta corrente na terra (com um subsistema de aterramento).`;
   pdf.text(pdf.splitTextToSize(intro3, contentWidth), marginX, 60);
 
   const intro4 = `As inspeções e levantamentos de informações foram efetuados na seguinte ordem:\na) Análise das informações fornecidas pelos ANEXOS (Projetos e relatórios fornecidos pelo cliente);\nb) Relatório de inspeção de SPDA e Caixas de Inspeção de Hastes de Aterramento;\nc) Relatório de Inspeção de Medição de Continuidade de Malha de Aterramento;\nd) Relatório de Inspeção de Pontos de aterramento e avaliação dos quadros de energia;\ne) Avaliação Geral do Sistema de Proteção contra Descargas Atmosféricas e Laudo Técnico Final.`;
@@ -762,12 +762,12 @@ export const generatePdfBlob = async (
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(7.5);
     pdf.setTextColor(15, 23, 42);
-    pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419)', marginX + 4, locY + 3.8);
+    pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)', marginX + 4, locY + 3.8);
 
     const parametros = [
       { param: 'Tipologia Construtiva:', valor: 'Alvenaria Convencional / Estrutura em Concreto Armado' },
       { param: 'Topografia & Entorno:', valor: 'Terreno Urbano Plano com Edificações Vizinhas' },
-      { param: 'Nível de Proteção Dimensionado:', valor: 'Nível III / IV (NBR 5419-2 - Gerenciamento de Risco)' },
+      { param: 'Nível de Proteção Dimensionado:', valor: 'Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)' },
       { param: 'Métodos de Proteção Aplicáveis:', valor: 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)' },
     ];
 
@@ -939,12 +939,12 @@ export const generatePdfBlob = async (
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(8.0);
     pdf.setTextColor(15, 23, 42);
-    pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419)', marginX + 4, locY + 4.2);
+    pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)', marginX + 4, locY + 4.2);
 
     const parametros = [
       { param: 'Tipologia Construtiva:', valor: 'Alvenaria Convencional / Estrutura em Concreto Armado' },
       { param: 'Topografia & Entorno:', valor: 'Terreno Urbano Plano com Edificações Vizinhas' },
-      { param: 'Nível de Proteção Dimensionado:', valor: 'Nível III / IV (NBR 5419-2 - Gerenciamento de Risco)' },
+      { param: 'Nível de Proteção Dimensionado:', valor: 'Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)' },
       { param: 'Métodos de Proteção Aplicáveis:', valor: 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)' },
     ];
 
@@ -1056,7 +1056,7 @@ export const generatePdfBlob = async (
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(8.5);
     pdf.setTextColor(15, 23, 42);
-    pdf.text('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419)', marginX + 4, 122.5);
+    pdf.text('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419:2026)', marginX + 4, 122.5);
 
     const subsistemas = [
       {
@@ -1258,20 +1258,20 @@ export const generatePdfBlob = async (
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(8.5);
   pdf.setTextColor(15, 23, 42);
-  pdf.text('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419/2018)', marginX + 4, tableY + 4.8);
+  pdf.text('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)', marginX + 4, tableY + 4.8);
 
   tableY += 7;
 
   const criterios = [
     {
       criterio: 'Continuidade de Armaduras e Malhas',
-      norma: 'NBR 5419-3:2018 (Item 5.3.5)',
+      norma: 'NBR 5419-3:2026 (Item 5.3.5)',
       limite: '≤ 0,200 Ω (200 mΩ)',
       status: conditions.continuidadeAprovada ? 'CONFORME' : 'ATENÇÃO',
     },
     {
       criterio: 'Resistência de Equipotencialização',
-      norma: 'NBR 5419-3:2018 (Item 6.2)',
+      norma: 'NBR 5419-3:2026 (Item 6.2)',
       limite: '≤ 0,200 Ω (200 mΩ)',
       status: 'CONFORME',
     },
@@ -1679,7 +1679,7 @@ export const generatePdfBlob = async (
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(6.8);
   pdf.setTextColor(51, 65, 85);
-  const artTermo = `Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2018 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.`;
+  const artTermo = `Este laudo possui validade técnica de 1 (um) ano a partir da data de emissão, ou conforme periodicidade de inspeção estipulada pela NBR 5419-3:2026 (Tabela 6). O responsável técnico declara que todas as medições foram efetuadas conforme os preceitos éticos e regulamentares do CREA.`;
   pdf.text(pdf.splitTextToSize(artTermo, contentWidth - 8), marginX + 4, finalY + 9.5);
 
   finalY += 23;
@@ -1760,7 +1760,7 @@ export const generatePdfBlob = async (
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(6.5);
       pdf.setTextColor(30, 58, 138);
-      pdf.text('CERTIFICAÇÃO DIGITAL - PADRÃO CREA / NBR 5419:2018', stampX + 3.5, stampY + 4);
+      pdf.text('CERTIFICAÇÃO DIGITAL - PADRÃO CREA / NBR 5419:2026', stampX + 3.5, stampY + 4);
 
       pdf.setFontSize(5.8);
       pdf.setFont('helvetica', 'normal');
