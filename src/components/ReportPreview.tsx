@@ -371,11 +371,11 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                       <span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>
                       3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE
                     </h3>
-                    <div className="w-full h-[185px] bg-slate-200 border border-slate-300 rounded overflow-hidden flex items-center justify-center shadow-inner">
+                    <div className="w-full flex items-center justify-center py-0.5">
                       <img
                         src={aerialPhoto!.url}
                         alt={aerialPhoto!.caption || 'Vista Aérea da Edificação'}
-                        className="w-full h-full object-cover"
+                        className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
                       />
                     </div>
                     <p className="text-[8.5px] font-semibold text-slate-700 mt-1.5 text-center">
@@ -427,11 +427,11 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                     <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block"></span>
                     3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO
                   </h3>
-                  <div className="w-full h-[185px] bg-slate-200 border border-slate-300 rounded overflow-hidden flex items-center justify-center shadow-inner">
+                  <div className="w-full flex items-center justify-center py-0.5">
                     <img
                       src={facadePhoto!.url}
                       alt={facadePhoto!.caption || 'Fachada Principal da Edificação'}
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
                     />
                   </div>
                   <p className="text-[8.5px] font-semibold text-slate-700 mt-1.5 text-center">
@@ -491,11 +491,11 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                       <span className={`w-2 h-2 rounded-full inline-block ${aerialPhoto ? 'bg-blue-600' : 'bg-emerald-600'}`} />
                       {aerialPhoto ? '3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE' : '3.1) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO'}
                     </h3>
-                    <div className="w-full h-[185px] bg-slate-200 border border-slate-300 rounded overflow-hidden flex items-center justify-center shadow-inner">
+                    <div className="w-full flex items-center justify-center py-0.5">
                       <img
                         src={(aerialPhoto || facadePhoto)!.url}
                         alt={(aerialPhoto || facadePhoto)!.caption || 'Foto do Local'}
-                        className="w-full h-full object-cover"
+                        className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
                       />
                     </div>
                     {((aerialPhoto || facadePhoto)!.caption?.trim()) && (
@@ -774,8 +774,8 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
             {/* Instrumento Miliohmímetro */}
             <div className="bg-slate-50 border border-slate-200 rounded p-2.5 flex gap-3 items-center">
               {equipmentPhotoUrl ? (
-                <div className="w-[140px] h-[95px] bg-white border border-gray-300 rounded overflow-hidden flex-shrink-0">
-                  <img src={equipmentPhotoUrl} alt="Miliohmímetro" className="w-full h-full object-cover" />
+                <div className="w-[140px] h-[95px] bg-white border border-gray-300 rounded overflow-hidden flex items-center justify-center p-1 flex-shrink-0">
+                  <img src={equipmentPhotoUrl} alt="Miliohmímetro" className="max-w-full max-h-full object-contain" />
                 </div>
               ) : null}
               <div className="flex-1 space-y-0.5">

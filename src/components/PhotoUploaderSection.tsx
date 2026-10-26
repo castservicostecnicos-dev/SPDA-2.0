@@ -44,6 +44,19 @@ import {
   BatchPhotoSaveItem,
 } from '../utils/photoDeviceSync';
 
+/**
+ * Lê o arquivo de imagem diretamente como DataURL sem redimensionar e sem cortar.
+ * Utilizado para miliohmímetro, vista aérea e fachada do condomínio.
+ */
+function readOriginalFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
 interface PhotoUploaderSectionProps {
   spdaPhotos: PhotoSlot[];
   measurementPhotos: PhotoSlot[];
@@ -1694,7 +1707,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                 const file = e.target.files?.[0];
                 if (!file) return;
                 try {
-                  const url = await optimizeImageFile(file);
+                  const url = await readOriginalFileAsDataUrl(file);
                   const copy = [...localPhotos];
                   copy[0] = {
                     id: copy[0]?.id || `aerial-${Date.now()}`,
@@ -1713,11 +1726,11 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
 
             {localPhotos[0]?.url ? (
               <div className="space-y-3">
-                <div className="relative w-full h-56 sm:h-72 bg-slate-900 rounded-lg overflow-hidden border border-slate-300 flex items-center justify-center shadow-inner">
+                <div className="relative w-full h-56 sm:h-72 bg-slate-900 rounded-lg overflow-hidden border border-slate-300 flex items-center justify-center p-2 shadow-inner">
                   <img
                     src={localPhotos[0].url}
                     alt={localPhotos[0].caption || 'Vista Aérea'}
-                    className="w-full h-full object-cover"
+                    className="max-w-full max-h-full object-contain rounded"
                   />
                   <button
                     type="button"
@@ -1814,7 +1827,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                 const file = e.target.files?.[0];
                 if (!file) return;
                 try {
-                  const url = await optimizeImageFile(file);
+                  const url = await readOriginalFileAsDataUrl(file);
                   const copy = [...localPhotos];
                   if (!copy[0]) {
                     copy[0] = {
@@ -1841,11 +1854,11 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
 
             {localPhotos[1]?.url ? (
               <div className="space-y-3">
-                <div className="relative w-full h-56 sm:h-72 bg-slate-900 rounded-lg overflow-hidden border border-slate-300 flex items-center justify-center shadow-inner">
+                <div className="relative w-full h-56 sm:h-72 bg-slate-900 rounded-lg overflow-hidden border border-slate-300 flex items-center justify-center p-2 shadow-inner">
                   <img
                     src={localPhotos[1].url}
                     alt={localPhotos[1].caption || 'Fachada'}
-                    className="w-full h-full object-cover"
+                    className="max-w-full max-h-full object-contain rounded"
                   />
                   <button
                     type="button"
@@ -1935,10 +1948,10 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-4">
-              <div className="w-full sm:w-56 h-36 bg-white rounded-lg border border-slate-300 overflow-hidden flex items-center justify-center relative shadow-inner">
+              <div className="w-full sm:w-56 h-36 bg-slate-100 rounded-lg border border-slate-300 overflow-hidden flex items-center justify-center relative p-1.5 shadow-inner">
                 {equipmentPhotoUrl ? (
                   <>
-                    <img src={equipmentPhotoUrl} alt="HTM-01" className="w-full h-full object-cover" />
+                    <img src={equipmentPhotoUrl} alt="HTM-01" className="max-w-full max-h-full object-contain" />
                     <button
                       type="button"
                       onClick={handleDeleteEquipmentPhoto}
@@ -1975,10 +1988,10 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                         const file = e.target.files?.[0];
                         if (!file) return;
                         try {
-                          const url = await optimizeImageFile(file);
+                          const url = await readOriginalFileAsDataUrl(file);
                           onUpdateEquipmentPhoto(url);
                         } catch (err) {
-                          console.error('Erro ao otimizar foto do instrumento', err);
+                          console.error('Erro ao salvar foto do instrumento', err);
                         }
                         if (e.target) e.target.value = '';
                       }}

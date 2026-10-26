@@ -32,7 +32,14 @@ import { SpdaReport, PhotoSlot } from '../types/spda';
 import { SJC_OFFICIAL_LOGO_DATA_URL } from '../assets/logo';
 import { generateSequentialDocxFileName } from './storage';
 import { consolidateReportPhotos } from './towerSorter';
-import { safeJpegDataUrl, processPhotoForPdf, processHeaderLogo } from './pdfGenerator';
+import {
+  safeJpegDataUrl,
+  processPhotoForPdf,
+  processHeaderLogo,
+  loadUncroppedPhoto,
+  calculateContainedDimensions,
+  UncroppedPhotoData,
+} from './pdfGenerator';
 
 /**
  * Gera a imagem PNG da marca d'água diagonal "SPDA 2026"
@@ -86,10 +93,14 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
 
 // ============================================================================
 // CONSTANTES DE LAYOUT & ESTILOS A4 IDÊNTICOS AO PDF
-// Largura útil A4 com margens de 20mm = 170mm = 9638 twips
+// Largura útil A4 com margens de 20mm (1134 twips de cada lado) = 170mm = 9638 twips = 481.9 pt.
+// Limite máximo para qualquer imagem no Word = 480 pt (garante que NUNCA ultrapasse as margens).
 // ============================================================================
 const TOTAL_WIDTH_TWIPS = 9638;
-const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips
+const MAX_DOCX_PRINTABLE_WIDTH_PT = 480; // 480 pt * 20 = 9600 twips <= 9638 twips (rigorosamente dentro das margens)
+const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips = 120.45 pt
+const PHOTO_GRID_WIDTH_PT = 109; // 38.5mm exatos a 72 pt/in (38.5 / 25.4 * 72 = 109.13 pt)
+const PHOTO_GRID_HEIGHT_PT = 136; // 48.0mm exatos a 72 pt/in (48.0 / 25.4 * 72 = 136.06 pt)
 
 const NO_BORDER = {
   style: BorderStyle.NONE,
@@ -222,7 +233,7 @@ function createPhotoGridTable(
   processedJpegs: string[],
   isMultiTower: boolean,
   showMeasurement = false,
-  imgHeightPx = 175
+  imgHeightPt = PHOTO_GRID_HEIGHT_PT
 ): Table {
   const rows: TableRow[] = [];
   const chunkSize = 4;
@@ -254,8 +265,8 @@ function createPhotoGridTable(
                 new ImageRun({
                   data: imageBytes,
                   transformation: {
-                    width: 140, // 38.5mm proporcional no Word
-                    height: imgHeightPx, // 48mm ou ajustado proporcional
+                    width: PHOTO_GRID_WIDTH_PT, // 38.5mm exatos (109 pt), cabe perfeitamente na célula sem extrapolar
+                    height: imgHeightPt, // Altura proporcional especificada (48mm padrão = 136 pt)
                   },
                   type: 'jpg',
                 }),
@@ -375,19 +386,19 @@ export async function generateDocxBlob(
   onProgress?.(15, `Processando ${spdaPhotos.length + measurementPhotos.length + quadrosPhotos.length + localPhotos.length} fotos do laudo...`);
 
   const [
-    localJpegs,
+    localPhotoInfos,
     spdaJpegs,
     measurementJpegs,
     quadrosJpegs,
-    equipmentJpeg,
+    equipmentPhotoInfo,
     headerLogoLayout,
     signatureJpeg,
   ] = await Promise.all([
-    Promise.all(localPhotos.map((p) => processPhotoForPdf(p, 900, 600, false))),
+    Promise.all(localPhotos.map((p) => loadUncroppedPhoto(p.url))),
     Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 770, 960, p.hasRedCircleMarker ?? true))),
     Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 770, 840, false))),
     Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 770, 840, p.hasRedCircleMarker ?? false))),
-    safeJpegDataUrl(report.equipmentPhotoUrl, 600, 400),
+    loadUncroppedPhoto(report.equipmentPhotoUrl),
     processHeaderLogo(company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL, 45, 18, 192, 8.5),
     report.digitalSignature?.enabled && report.digitalSignature.imageUrl
       ? safeJpegDataUrl(report.digitalSignature.imageUrl, 500, 200, '#ffffff')
@@ -623,7 +634,8 @@ export async function generateDocxBlob(
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
   // =========================================================================
-  // PÁGINA 3: CARACTERÍSTICAS DA EDIFICAÇÃO & VISTA AÉREA EM DESTAQUE
+  // PÁGINA 3: CARACTERÍSTICAS DA EDIFICAÇÃO & FOTOS EM DESTAQUE
+  // Mantém a proporção nativa da foto sem corte e estritamente contida nas margens
   // =========================================================================
   docChildren.push(createSectionHeader('3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL'));
 
@@ -637,12 +649,38 @@ export async function generateDocxBlob(
     );
   }
 
-  // 3.1) VISTA AÉREA
-  docChildren.push(createSubheaderBanner('3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE'));
+  const validLocalInfos = localPhotoInfos.filter((item): item is UncroppedPhotoData => Boolean(item));
 
-  if (localJpegs[0]) {
+  const parametrosRows: Array<[string, string]> = [
+    ['Tipologia Construtiva:', 'Alvenaria Convencional / Estrutura em Concreto Armado'],
+    ['Topografia & Entorno:', 'Terreno Urbano Plano com Edificações Vizinhas'],
+    ['Nível de Proteção Dimensionado:', 'Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)'],
+    ['Métodos de Proteção Aplicáveis:', 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)'],
+  ];
+
+  const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de moradores e equipamentos eletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
+  const hist1 = `4.1- Histórico: Conforme informações obtidas durante a vistoria, ${client.historicoQueimaOcorrencias || texts.historicoItem4_1}`;
+  const hist2 = `4.2- A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.`;
+
+  if (validLocalInfos.length >= 2) {
+    // -------------------------------------------------------------------------
+    // CASO COM VISTA AÉREA E FACHADA: CADA UMA EM SUA PÁGINA EM GRANDE DESTAQUE
+    // -------------------------------------------------------------------------
+    // 3.1) VISTA AÉREA (NA PÁGINA 3)
+    docChildren.push(createSubheaderBanner('3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE'));
+
     try {
-      const aereaBytes = dataUrlToUint8Array(localJpegs[0]);
+      const aereaInfo = validLocalInfos[0];
+      const aereaBytes = dataUrlToUint8Array(aereaInfo.dataUrl);
+
+      // Limita rigorosamente à largura útil do documento no Word (480 pt = 170 mm)
+      // Mantém a proporção exata sem cortar ou distorcer e sem extrapolar as margens
+      const { width: docxW, height: docxH } = calculateContainedDimensions(
+        aereaInfo.aspect,
+        MAX_DOCX_PRINTABLE_WIDTH_PT,
+        260
+      );
+
       docChildren.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -650,8 +688,8 @@ export async function generateDocxBlob(
           children: [
             new ImageRun({
               data: aereaBytes,
-              transformation: { width: 500, height: 260 },
-              type: 'jpg',
+              transformation: { width: docxW, height: docxH },
+              type: aereaInfo.format === 'PNG' ? 'png' : 'jpg',
             }),
           ],
         }),
@@ -672,31 +710,31 @@ export async function generateDocxBlob(
     } catch (e) {
       console.warn('Erro ao inserir foto aérea no docx:', e);
     }
-  }
 
-  // PARÂMETROS CONSTRUTIVOS (Texto Puro Editável)
-  docChildren.push(createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)'));
+    // PARÂMETROS CONSTRUTIVOS (Texto Puro Editável)
+    docChildren.push(
+      createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)'),
+      ...createDataListParagraphs(parametrosRows),
+      // Quebra para Página 4
+      new Paragraph({ children: [new PageBreak()] }),
+      // =========================================================================
+      // PÁGINA 4: FACHADA PRINCIPAL EM GRANDE DESTAQUE & 4) HISTÓRICO
+      // =========================================================================
+      createSubheaderBanner('3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO')
+    );
 
-  const parametrosRows: Array<[string, string]> = [
-    ['Tipologia Construtiva:', 'Alvenaria Convencional / Estrutura em Concreto Armado'],
-    ['Topografia & Entorno:', 'Terreno Urbano Plano com Edificações Vizinhas'],
-    ['Nível de Proteção Dimensionado:', 'Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)'],
-    ['Métodos de Proteção Aplicáveis:', 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)'],
-  ];
-
-  docChildren.push(...createDataListParagraphs(parametrosRows));
-
-  // Quebra para Página 4
-  docChildren.push(new Paragraph({ children: [new PageBreak()] }));
-
-  // =========================================================================
-  // PÁGINA 4: FACHADA PRINCIPAL EM GRANDE DESTAQUE & 4) HISTÓRICO
-  // =========================================================================
-  docChildren.push(createSubheaderBanner('3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO'));
-
-  if (localJpegs[1]) {
     try {
-      const fachadaBytes = dataUrlToUint8Array(localJpegs[1]);
+      const facInfo = validLocalInfos[1];
+      const fachadaBytes = dataUrlToUint8Array(facInfo.dataUrl);
+
+      // Limita rigorosamente à largura útil do documento (480 pt = 170 mm)
+      const facMaxH = validLocalInfos[2] ? 210 : 260;
+      const { width: docxW, height: docxH } = calculateContainedDimensions(
+        facInfo.aspect,
+        MAX_DOCX_PRINTABLE_WIDTH_PT,
+        facMaxH
+      );
+
       docChildren.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -704,8 +742,8 @@ export async function generateDocxBlob(
           children: [
             new ImageRun({
               data: fachadaBytes,
-              transformation: { width: 500, height: 260 },
-              type: 'jpg',
+              transformation: { width: docxW, height: docxH },
+              type: facInfo.format === 'PNG' ? 'png' : 'jpg',
             }),
           ],
         }),
@@ -726,33 +764,102 @@ export async function generateDocxBlob(
     } catch (e) {
       console.warn('Erro ao inserir foto da fachada no docx:', e);
     }
-  }
 
-  // 3.3 Foto de Entrada (se existir)
-  if (localJpegs[2]) {
-    docChildren.push(createSubheaderBanner('3.3) ENTRADA / ACESSO PRINCIPAL'));
+    // 3.3 Foto de Entrada (se existir)
+    if (validLocalInfos[2]) {
+      docChildren.push(createSubheaderBanner('3.3) ENTRADA / ACESSO PRINCIPAL'));
+      try {
+        const p3 = validLocalInfos[2];
+        const entradaBytes = dataUrlToUint8Array(p3.dataUrl);
+        const { width: docxW, height: docxH } = calculateContainedDimensions(
+          p3.aspect,
+          MAX_DOCX_PRINTABLE_WIDTH_PT,
+          150
+        );
+        docChildren.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 60, after: 30 },
+            children: [
+              new ImageRun({
+                data: entradaBytes,
+                transformation: { width: docxW, height: docxH },
+                type: p3.format === 'PNG' ? 'png' : 'jpg',
+              }),
+            ],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 0, after: 60 },
+            children: [
+              new TextRun({
+                text: localPhotos[2]?.caption || 'Portaria e acesso principal à edificação.',
+                bold: true,
+                size: 14,
+                color: '334155',
+                font: 'Arial',
+              }),
+            ],
+          })
+        );
+      } catch (e) {
+        console.warn('Erro ao inserir foto da portaria:', e);
+      }
+    }
+
+    // Texto de Ramo de atividade e nível de exposição
+    docChildren.push(
+      new Paragraph({
+        spacing: { before: 40, after: 80 },
+        children: [new TextRun({ text: exposicaoText, size: 16, color: '1E293B', font: 'Arial' })],
+      }),
+      createSectionHeader('4) HISTÓRICO DE OCORRÊNCIAS & DESCARGAS ATMOSFÉRICAS'),
+      new Paragraph({
+        spacing: { before: 20, after: 40 },
+        children: [new TextRun({ text: hist1, size: 16, color: '1E293B', font: 'Arial' })],
+      }),
+      new Paragraph({
+        spacing: { before: 20, after: 80 },
+        children: [new TextRun({ text: hist2, size: 16, color: '1E293B', font: 'Arial' })],
+      })
+    );
+
+  } else if (validLocalInfos.length === 1) {
+    // -------------------------------------------------------------------------
+    // 1 FOTO DO LOCAL: DESTAQUE NA PÁGINA 3 (SEM PÁGINA EXTRA EM BRANCO)
+    // -------------------------------------------------------------------------
+    docChildren.push(createSubheaderBanner('3.1) REGISTRO FOTOGRÁFICO DO LOCAL / FACHADA'));
+
     try {
-      const entradaBytes = dataUrlToUint8Array(localJpegs[2]);
+      const singleInfo = validLocalInfos[0];
+      const singleBytes = dataUrlToUint8Array(singleInfo.dataUrl);
+
+      const { width: docxW, height: docxH } = calculateContainedDimensions(
+        singleInfo.aspect,
+        MAX_DOCX_PRINTABLE_WIDTH_PT,
+        260
+      );
+
       docChildren.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { before: 60, after: 30 },
+          spacing: { before: 80, after: 40 },
           children: [
             new ImageRun({
-              data: entradaBytes,
-              transformation: { width: 420, height: 180 },
-              type: 'jpg',
+              data: singleBytes,
+              transformation: { width: docxW, height: docxH },
+              type: singleInfo.format === 'PNG' ? 'png' : 'jpg',
             }),
           ],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { before: 0, after: 60 },
+          spacing: { before: 0, after: 100 },
           children: [
             new TextRun({
-              text: localPhotos[2]?.caption || 'Portaria e acesso principal à edificação.',
+              text: localPhotos[0]?.caption || 'Foto do local e estrutura da edificação.',
               bold: true,
-              size: 14,
+              size: 15,
               color: '334155',
               font: 'Arial',
             }),
@@ -760,38 +867,53 @@ export async function generateDocxBlob(
         })
       );
     } catch (e) {
-      console.warn('Erro ao inserir foto da portaria:', e);
+      console.warn('Erro ao inserir foto no docx:', e);
     }
+
+    docChildren.push(
+      createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)'),
+      ...createDataListParagraphs(parametrosRows),
+      new Paragraph({
+        spacing: { before: 40, after: 80 },
+        children: [new TextRun({ text: exposicaoText, size: 16, color: '1E293B', font: 'Arial' })],
+      }),
+      createSectionHeader('4) HISTÓRICO DE OCORRÊNCIAS & DESCARGAS ATMOSFÉRICAS'),
+      new Paragraph({
+        spacing: { before: 20, after: 40 },
+        children: [new TextRun({ text: hist1, size: 16, color: '1E293B', font: 'Arial' })],
+      }),
+      new Paragraph({
+        spacing: { before: 20, after: 80 },
+        children: [new TextRun({ text: hist2, size: 16, color: '1E293B', font: 'Arial' })],
+      })
+    );
+
+  } else {
+    // -------------------------------------------------------------------------
+    // SEM FOTOS DO LOCAL: PÁGINA 3 COMPLETA SEM ESPAÇOS EM BRANCO
+    // -------------------------------------------------------------------------
+    docChildren.push(
+      createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)'),
+      ...createDataListParagraphs(parametrosRows),
+      new Paragraph({
+        spacing: { before: 40, after: 80 },
+        children: [new TextRun({ text: exposicaoText, size: 16, color: '1E293B', font: 'Arial' })],
+      }),
+      createSectionHeader('4) HISTÓRICO DE OCORRÊNCIAS & DESCARGAS ATMOSFÉRICAS'),
+      new Paragraph({
+        spacing: { before: 20, after: 40 },
+        children: [new TextRun({ text: hist1, size: 16, color: '1E293B', font: 'Arial' })],
+      }),
+      new Paragraph({
+        spacing: { before: 20, after: 80 },
+        children: [new TextRun({ text: hist2, size: 16, color: '1E293B', font: 'Arial' })],
+      })
+    );
   }
 
-  // Texto de Ramo de atividade e nível de exposição
-  const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de moradores e equipamentos eletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
-  docChildren.push(
-    new Paragraph({
-      spacing: { before: 40, after: 80 },
-      children: [new TextRun({ text: exposicaoText, size: 16, color: '1E293B', font: 'Arial' })],
-    })
-  );
-
-  // 4) HISTÓRICO DE OCORRÊNCIAS
-  docChildren.push(createSectionHeader('4) HISTÓRICO DE OCORRÊNCIAS & DESCARGAS ATMOSFÉRICAS'));
-
-  const hist1 = `4.1- Histórico: Conforme informações obtidas durante a vistoria, ${client.historicoQueimaOcorrencias || texts.historicoItem4_1}`;
-  const hist2 = `4.2- A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.`;
-
-  docChildren.push(
-    new Paragraph({
-      spacing: { before: 20, after: 40 },
-      children: [new TextRun({ text: hist1, size: 16, color: '1E293B', font: 'Arial' })],
-    }),
-    new Paragraph({
-      spacing: { before: 20, after: 80 },
-      children: [new TextRun({ text: hist2, size: 16, color: '1E293B', font: 'Arial' })],
-    })
-  );
-
-  // Quebra para Página 5 (Vistoria do SPDA)
+  // Quebra para Página do SPDA
   docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+
 
   // =========================================================================
   // PÁGINA 5: 5) VISTORIA DO SPDA EXISTENTE & PARECER VISUAL
@@ -935,9 +1057,17 @@ export async function generateDocxBlob(
     }),
   ];
 
-  if (equipmentJpeg) {
+  if (equipmentPhotoInfo) {
     try {
-      const eqBytes = dataUrlToUint8Array(equipmentJpeg);
+      const eqBytes = dataUrlToUint8Array(equipmentPhotoInfo.dataUrl);
+
+      // Mantém a proporção nativa do miliohmímetro sem distorcer nem cortar, estritamente contido
+      const { width: docxEqW, height: docxEqH } = calculateContainedDimensions(
+        equipmentPhotoInfo.aspect,
+        240, // 240 pt
+        150  // 150 pt
+      );
+
       docChildren.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -945,8 +1075,8 @@ export async function generateDocxBlob(
           children: [
             new ImageRun({
               data: eqBytes,
-              transformation: { width: 220, height: 150 },
-              type: 'jpg',
+              transformation: { width: docxEqW, height: docxEqH },
+              type: equipmentPhotoInfo.format === 'PNG' ? 'png' : 'jpg',
             }),
           ],
         })
@@ -1019,7 +1149,7 @@ export async function generateDocxBlob(
   if (measurePage1.length > 0) {
     docChildren.push(
       createSubheaderBanner('6.1) PONTOS DE MEDIÇÃO DE CONTINUIDADE OBTIDOS'),
-      createPhotoGridTable(measurePage1, measureJpegsPage1, isMultiTower, true, 140)
+      createPhotoGridTable(measurePage1, measureJpegsPage1, isMultiTower, true, 108)
     );
 
     // Páginas de Continuação de Medições se houver
@@ -1027,7 +1157,7 @@ export async function generateDocxBlob(
       docChildren.push(
         new Paragraph({ children: [new PageBreak()] }),
         createSectionHeader('6.1) PONTOS DE MEDIÇÃO (CONTINUAÇÃO)'),
-        createPhotoGridTable(measureContChunks[cIdx] || [], measureContJpegChunks[cIdx] || [], isMultiTower, true, 165)
+        createPhotoGridTable(measureContChunks[cIdx] || [], measureContJpegChunks[cIdx] || [], isMultiTower, true, 114)
       );
     }
   } else {
@@ -1077,9 +1207,10 @@ export async function generateDocxBlob(
   const quadrosContJpegChunks = chunkArray(quadrosJpegsRestantes, 16);
 
   if (quadrosPage1.length > 0) {
+    const quadrosImgH = quadrosPage1.length > 12 ? 96 : (quadrosPage1.length > 8 ? 105 : 116);
     docChildren.push(
       createSubheaderBanner('REGISTROS FOTOGRÁFICOS DOS QUADROS DE ENERGIA'),
-      createPhotoGridTable(quadrosPage1, quadrosJpegsPage1, isMultiTower, false, 150)
+      createPhotoGridTable(quadrosPage1, quadrosJpegsPage1, isMultiTower, false, quadrosImgH)
     );
 
     // Páginas de continuação dos quadros se houver mais de 16 fotos
@@ -1087,7 +1218,7 @@ export async function generateDocxBlob(
       docChildren.push(
         new Paragraph({ children: [new PageBreak()] }),
         createSectionHeader('7) ANÁLISE DOS QUADROS DE ENERGIA (CONTINUAÇÃO)'),
-        createPhotoGridTable(quadrosContChunks[cIdx] || [], quadrosContJpegChunks[cIdx] || [], isMultiTower, false, 165)
+        createPhotoGridTable(quadrosContChunks[cIdx] || [], quadrosContJpegChunks[cIdx] || [], isMultiTower, false, 116)
       );
     }
   } else {

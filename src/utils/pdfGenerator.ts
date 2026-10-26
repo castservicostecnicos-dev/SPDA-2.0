@@ -83,6 +83,140 @@ export async function safeJpegDataUrl(url?: string, width = 540, height = 230, f
   });
 }
 
+export interface UncroppedPhotoData {
+  dataUrl: string;
+  width: number;
+  height: number;
+  aspect: number;
+  format: 'JPEG' | 'PNG';
+}
+
+/**
+ * Carrega a foto original enviada pelo usuário SEM redimensionar e SEM cortar.
+ * Preserva 100% da imagem na sua proporção nativa para que seja inserida no laudo
+ * (PDF e DOCX) exatamente da mesma forma como foi enviada ao sistema.
+ */
+export async function loadUncroppedPhoto(url?: string): Promise<UncroppedPhotoData | null> {
+  if (!url) return null;
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      resolve(null);
+    }, 5000);
+
+    const img = new Image();
+    if (!url.startsWith('data:') && !url.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
+
+    img.onload = () => {
+      clearTimeout(timer);
+      try {
+        const width = img.naturalWidth || img.width || 800;
+        const height = img.naturalHeight || img.height || 600;
+        const aspect = width / height;
+
+        // Se já for data URL JPEG ou PNG, usa diretamente preservando 100% dos bytes originais
+        if (url.startsWith('data:image/jpeg') || url.startsWith('data:image/jpg')) {
+          resolve({
+            dataUrl: url,
+            width,
+            height,
+            aspect,
+            format: 'JPEG',
+          });
+          return;
+        }
+
+        if (url.startsWith('data:image/png')) {
+          resolve({
+            dataUrl: url,
+            width,
+            height,
+            aspect,
+            format: 'PNG',
+          });
+          return;
+        }
+
+        // Para blob, svg, webp ou url externa, desenha na resolução nativa 1:1 sem redimensionar nem cortar
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve({
+            dataUrl: url,
+            width,
+            height,
+            aspect,
+            format: 'JPEG',
+          });
+          return;
+        }
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const safeDataUrl = canvas.toDataURL('image/jpeg', 0.96);
+        resolve({
+          dataUrl: safeDataUrl,
+          width,
+          height,
+          aspect,
+          format: 'JPEG',
+        });
+      } catch (err) {
+        console.error('Erro ao processar foto original sem corte:', err);
+        resolve(null);
+      }
+    };
+
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(null);
+    };
+
+    img.src = url;
+  });
+}
+
+/**
+ * Calcula dimensões contidas rigorosamente dentro dos limites de largura e altura especificados,
+ * preservando 100% da proporção nativa da foto sem distorcer e sem cortar nada.
+ * Garante que a largura NUNCA ultrapasse a largura útil do documento (contentWidth = 170mm no PDF),
+ * impedindo que qualquer foto extravase as margens do documento.
+ */
+export function calculateContainedDimensions(
+  aspect: number,
+  maxWidth: number,
+  maxHeight: number
+): { width: number; height: number } {
+  const safeAspect = aspect && !isNaN(aspect) && isFinite(aspect) && aspect > 0 ? aspect : 4 / 3;
+
+  // Inicia limitando pela largura máxima disponível
+  let width = maxWidth;
+  let height = width / safeAspect;
+
+  // Se a altura calculada ultrapassar a altura máxima permitida, recalcula com base na altura
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * safeAspect;
+  }
+
+  // Trava de segurança absoluta: se a largura resultante ultrapassar maxWidth, recolapsa na largura máxima
+  if (width > maxWidth) {
+    width = maxWidth;
+    height = width / safeAspect;
+  }
+
+  return {
+    width: Number(width.toFixed(2)),
+    height: Number(height.toFixed(2)),
+  };
+}
+
 /**
  * Pre-processes a photo for the PDF:
  * 1. Exact CSS `object-cover` framing matching the UI preview and CircleFocusModal.
@@ -409,18 +543,18 @@ export const generatePdfBlob = async (
   onProgress?.(15, `Processando ${spdaPhotos.length + measurementPhotos.length + quadrosPhotos.length + localPhotos.length} fotos do laudo...`);
 
   const [
-    localJpegs,
+    localPhotoInfos,
     spdaJpegs,
     measureJpegs,
     quadrosJpegs,
-    equipJpeg,
+    equipmentPhotoInfo,
     headerLogoLayout,
   ] = await Promise.all([
-    Promise.all(localPhotos.map((p) => processPhotoForPdf(p, 900, 600, false))),
+    Promise.all(localPhotos.map((p) => loadUncroppedPhoto(p.url))),
     Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 770, 960, p.hasRedCircleMarker ?? true))),
     Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 770, 840, false))),
     Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 770, 840, p.hasRedCircleMarker ?? false))),
-    safeJpegDataUrl(equipmentPhotoUrl, 600, 400),
+    loadUncroppedPhoto(equipmentPhotoUrl),
     processHeaderLogo(report.company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL),
   ]);
 
@@ -696,7 +830,7 @@ export const generatePdfBlob = async (
   // PÁGINA 3: 3) CARACTERÍSTICAS DA EDIFICAÇÃO & VISTA AÉREA (EM DESTAQUE)
   // Cada foto do local agora ganha sua própria sessão/seção em destaque com título próprio
   // ==========================================
-  const validLocalJpegs = localJpegs.filter(Boolean);
+  const validLocalInfos = localPhotoInfos.filter((item): item is UncroppedPhotoData => Boolean(item));
   const isMultiTower =
     Boolean(client.quantidadeTorres && client.quantidadeTorres > 1) ||
     Boolean(client.torresNomes && client.torresNomes.length > 1) ||
@@ -728,9 +862,10 @@ export const generatePdfBlob = async (
     locY += locDescLines.length * 4.0 + 3;
   }
 
-  if (validLocalJpegs.length >= 2) {
+  if (validLocalInfos.length >= 2) {
     // -------------------------------------------------------------------------
     // CASO COM VISTA AÉREA E FACHADA: CADA UMA EM SUA SESSÃO EM GRANDE DESTAQUE!
+    // Mantém a proporção nativa da foto sem cortar e sem redimensionar/esticar
     // -------------------------------------------------------------------------
     // 1. SESSÃO: VISTA AÉREA (NA PÁGINA 3)
     pdf.setFillColor(241, 245, 249);
@@ -741,11 +876,16 @@ export const generatePdfBlob = async (
     pdf.text('3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE', marginX + 4, locY + 4.2);
     locY += 8;
 
-    // Foto da Vista Aérea em grande destaque centralizado
-    const photoWidth = 150;
-    const photoHeight = 78;
+    // Foto da Vista Aérea na sua proporção nativa sem corte, estritamente limitada pela largura do documento
+    const aereaInfo = validLocalInfos[0];
+    const { width: photoWidth, height: photoHeight } = calculateContainedDimensions(
+      aereaInfo.aspect,
+      contentWidth, // 170mm máximo (largura útil entre margens laterais)
+      105 // altura máxima na página 3, permitindo que fotos em proporção paisagem preencham a largura total
+    );
+
     const photoX = marginX + (contentWidth - photoWidth) / 2;
-    pdf.addImage(validLocalJpegs[0], 'JPEG', photoX, locY, photoWidth, photoHeight);
+    pdf.addImage(aereaInfo.dataUrl, aereaInfo.format, photoX, locY, photoWidth, photoHeight);
     locY += photoHeight + 3.5;
 
     // Legenda da Vista Aérea
@@ -807,20 +947,29 @@ export const generatePdfBlob = async (
     pdf.text('3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO', marginX + 4, facY + 4.2);
     facY += 8;
 
-    // Foto da Fachada em grande destaque centralizado
-    pdf.addImage(validLocalJpegs[1], 'JPEG', photoX, facY, photoWidth, photoHeight);
-    facY += photoHeight + 3.5;
+    // Foto da Fachada na sua proporção nativa sem corte, estritamente limitada pela largura do documento
+    const facInfo = validLocalInfos[1];
+    const facMaxH = validLocalInfos[2] ? 85 : 110;
+    const { width: facWidth, height: facHeight } = calculateContainedDimensions(
+      facInfo.aspect,
+      contentWidth, // 170mm máximo
+      facMaxH // altura máxima proporcional na página 4
+    );
+
+    const facX = marginX + (contentWidth - facWidth) / 2;
+    pdf.addImage(facInfo.dataUrl, facInfo.format, facX, facY, facWidth, facHeight);
+    facY += facHeight + 3.5;
 
     // Legenda da Fachada
     const fachadaCap = localPhotos[1]?.caption?.trim() || 'Fachada principal da edificação, estrutura predial e acessos vistoriados.';
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(7.2);
     pdf.setTextColor(51, 65, 85);
-    pdf.text(fachadaCap, 105, facY, { align: 'center', maxWidth: photoWidth });
+    pdf.text(fachadaCap, 105, facY, { align: 'center', maxWidth: facWidth });
     facY += 6;
 
     // Foto de entrada se existir (3ª foto)
-    if (validLocalJpegs[2]) {
+    if (validLocalInfos[2]) {
       pdf.setFillColor(241, 245, 249);
       pdf.rect(marginX, facY, contentWidth, 5.5, 'F');
       pdf.setFont('helvetica', 'bold');
@@ -829,13 +978,21 @@ export const generatePdfBlob = async (
       pdf.text('3.3) ENTRADA / ACESSO PRINCIPAL', marginX + 4, facY + 3.8);
       facY += 7;
 
-      pdf.addImage(validLocalJpegs[2], 'JPEG', marginX + 20, facY, 130, 48);
-      facY += 50;
+      const p3 = validLocalInfos[2];
+      const { width: w3, height: h3 } = calculateContainedDimensions(
+        p3.aspect,
+        Math.min(150, contentWidth),
+        55
+      );
+      const x3 = marginX + (contentWidth - w3) / 2;
+      pdf.addImage(p3.dataUrl, p3.format, x3, facY, w3, h3);
+      facY += h3 + 3;
+
       const entradaCap = localPhotos[2]?.caption?.trim() || 'Portaria e acesso principal à edificação.';
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(7.0);
       pdf.setTextColor(71, 85, 105);
-      pdf.text(entradaCap, 105, facY, { align: 'center', maxWidth: 130 });
+      pdf.text(entradaCap, 105, facY, { align: 'center', maxWidth: w3 });
       facY += 5;
     }
 
@@ -874,8 +1031,8 @@ export const generatePdfBlob = async (
     const histLines2 = pdf.splitTextToSize(hist2, contentWidth);
     pdf.text(histLines2, marginX, facY);
 
-  } else if (validLocalJpegs.length === 1) {
-    // 1 foto do local em destaque na Página 3
+  } else if (validLocalInfos.length === 1) {
+    // 1 foto do local em destaque na Página 3 na proporção nativa sem corte, estritamente limitada pela largura do documento
     pdf.setFillColor(241, 245, 249);
     pdf.rect(marginX, locY, contentWidth, 6, 'F');
     pdf.setFont('helvetica', 'bold');
@@ -884,10 +1041,15 @@ export const generatePdfBlob = async (
     pdf.text('3.1) REGISTRO FOTOGRÁFICO DO LOCAL / FACHADA', marginX + 4, locY + 4.2);
     locY += 8;
 
-    const photoWidth = 150;
-    const photoHeight = 78;
+    const singleInfo = validLocalInfos[0];
+    const { width: photoWidth, height: photoHeight } = calculateContainedDimensions(
+      singleInfo.aspect,
+      contentWidth, // 170mm máximo
+      105 // altura máxima na página 3
+    );
+
     const photoX = marginX + (contentWidth - photoWidth) / 2;
-    pdf.addImage(validLocalJpegs[0], 'JPEG', photoX, locY, photoWidth, photoHeight);
+    pdf.addImage(singleInfo.dataUrl, singleInfo.format, photoX, locY, photoWidth, photoHeight);
     locY += photoHeight + 3.5;
 
     const cap = localPhotos[0]?.caption?.trim() || 'Foto do local e estrutura da edificação.';
@@ -896,6 +1058,7 @@ export const generatePdfBlob = async (
     pdf.setTextColor(51, 65, 85);
     pdf.text(cap, 105, locY, { align: 'center', maxWidth: photoWidth });
     locY += 6;
+
 
     // Ramo de atividade
     const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de moradores e equipamentos eletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
@@ -1206,9 +1369,19 @@ export const generatePdfBlob = async (
   pdf.setLineWidth(0.4);
   pdf.roundedRect(marginX, equipStartY, contentWidth, 54, 1.5, 1.5, 'FD');
 
-  if (equipJpeg) {
-    // Foto do instrumento posicionada à esquerda
-    pdf.addImage(equipJpeg, 'JPEG', marginX + 4, equipStartY + 4, 60, 46);
+  if (equipmentPhotoInfo) {
+    // Foto do instrumento posicionada à esquerda mantendo proporção nativa sem corte, estritamente limitada
+    const boxW = 60;
+    const boxH = 46;
+    const { width: eqW, height: eqH } = calculateContainedDimensions(
+      equipmentPhotoInfo.aspect,
+      boxW,
+      boxH
+    );
+
+    const eqX = marginX + 4 + (boxW - eqW) / 2;
+    const eqY = equipStartY + 4 + (boxH - eqH) / 2;
+    pdf.addImage(equipmentPhotoInfo.dataUrl, equipmentPhotoInfo.format, eqX, eqY, eqW, eqH);
 
     // Texto técnico ao lado da foto
     const sideX = marginX + 68;
