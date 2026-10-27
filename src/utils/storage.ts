@@ -79,26 +79,30 @@ export function hasUserContent(report?: SpdaReport | null): boolean {
 }
 
 /**
- * Salva o laudo com segurança absoluta:
- * 1. Chave ativa no IndexedDB
- * 2. Cópia no banco mestre relacional (Laudos, Condomínios e Clientes)
+ * Salva o laudo com segurança absoluta e sem travar o navegador:
+ * 1. Chave ativa no IndexedDB (leve, rápido, ~5ms)
+ * 2. Cópia no banco mestre relacional (Laudos, Condomínios e Clientes) apenas em fullSync
  * 3. Fotos persistidas no store de fotos de campo
  * NUNCA salva fotos em localStorage (elimina QuotaExceededError e memory crash no Chrome)
  */
-export async function saveReportToStorage(report: SpdaReport): Promise<void> {
+export async function saveReportToStorage(
+  report: SpdaReport,
+  options: { fullSync?: boolean } = {}
+): Promise<void> {
   const now = new Date();
   const timeStr = now.toISOString();
   const cleaned = cleanReportForStorage(report);
+  const isFullSync = options.fullSync ?? false;
 
   try {
-    // 1. Salva na chave ativa do IndexedDB
+    // 1. Salva na chave ativa do IndexedDB (operação única e ultrarrápida)
     const db = await openDatabase();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       store.put(cleaned, REPORT_KEY);
 
-      if (hasUserContent(cleaned)) {
+      if (isFullSync && hasUserContent(cleaned)) {
         store.put(cleaned, BACKUP_REPORT_KEY);
       }
 
@@ -117,25 +121,27 @@ export async function saveReportToStorage(report: SpdaReport): Promise<void> {
       // ignore
     }
 
-    // 3. Atualiza os cadastros de Condomínios, Clientes e Laudos no banco mestre
-    saveLaudoRecord(cleaned).catch(() => {});
-    syncCondominioFromReport(cleaned).catch(() => {});
-    if (cleaned.client?.name) {
-      saveCliente({
-        name: cleaned.client.name,
-        cnpj: cleaned.client.cnpj,
-        local: cleaned.client.local,
-        municipio: cleaned.client.municipio,
-        ramoAtividade: cleaned.client.ramoAtividade,
-        tecnico: cleaned.client.tecnico,
-        cargo: cleaned.client.cargo,
-        crea: cleaned.client.crea,
-        art: cleaned.client.art,
-      }).catch(() => {});
-    }
+    // 3. Atualizações secundárias (apenas em fullSync para não sobrecarregar I/O no celular)
+    if (isFullSync) {
+      saveLaudoRecord(cleaned).catch(() => {});
+      syncCondominioFromReport(cleaned).catch(() => {});
+      if (cleaned.client?.name) {
+        saveCliente({
+          name: cleaned.client.name,
+          cnpj: cleaned.client.cnpj,
+          local: cleaned.client.local,
+          municipio: cleaned.client.municipio,
+          ramoAtividade: cleaned.client.ramoAtividade,
+          tecnico: cleaned.client.tecnico,
+          cargo: cleaned.client.cargo,
+          crea: cleaned.client.crea,
+          art: cleaned.client.art,
+        }).catch(() => {});
+      }
 
-    // 4. Salva fotos no banco de fotos de campo em segundo plano
-    syncPhotosToFieldStore(cleaned).catch(() => {});
+      // Sincroniza fotos no banco relacional apenas no fullSync
+      syncPhotosToFieldStore(cleaned).catch(() => {});
+    }
   } catch (err) {
     console.warn('Aviso de salvamento no banco local:', err);
   }

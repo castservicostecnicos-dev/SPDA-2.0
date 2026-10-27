@@ -3,6 +3,7 @@ import { SpdaReport, PhotoSlot } from '../types/spda';
 import { SJC_OFFICIAL_LOGO_DATA_URL } from '../assets/logo';
 import { generateSequentialPdfFileName } from './storage';
 import { consolidateReportPhotos } from './towerSorter';
+import { disposeCanvas } from './imageOptimizer';
 
 export interface GeneratePdfOptions {
   fileName?: string;
@@ -37,8 +38,9 @@ export async function safeJpegDataUrl(url?: string, width = 540, height = 230, f
 
     img.onload = () => {
       clearTimeout(timer);
+      let canvas: HTMLCanvasElement | null = null;
       try {
-        const canvas = document.createElement('canvas');
+        canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
@@ -65,17 +67,25 @@ export async function safeJpegDataUrl(url?: string, width = 540, height = 230, f
           }
 
           ctx.drawImage(img, 0, 0, img.width, img.height, dx, dy, dw, dh);
-          resolve(canvas.toDataURL('image/jpeg', 0.95));
+          const out = canvas.toDataURL('image/jpeg', 0.95);
+          disposeCanvas(canvas);
+          img.src = '';
+          resolve(out);
         } else {
+          disposeCanvas(canvas);
+          img.src = '';
           resolve('');
         }
       } catch {
+        disposeCanvas(canvas);
+        img.src = '';
         resolve('');
       }
     };
 
     img.onerror = () => {
       clearTimeout(timer);
+      img.src = '';
       resolve('');
     };
 
@@ -145,6 +155,8 @@ export async function loadUncroppedPhoto(url?: string): Promise<UncroppedPhotoDa
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
+          disposeCanvas(canvas);
+          img.src = '';
           resolve({
             dataUrl: url,
             width,
@@ -159,7 +171,9 @@ export async function loadUncroppedPhoto(url?: string): Promise<UncroppedPhotoDa
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
 
-        const safeDataUrl = canvas.toDataURL('image/jpeg', 0.96);
+        const safeDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        disposeCanvas(canvas);
+        img.src = '';
         resolve({
           dataUrl: safeDataUrl,
           width,
@@ -169,12 +183,14 @@ export async function loadUncroppedPhoto(url?: string): Promise<UncroppedPhotoDa
         });
       } catch (err) {
         console.error('Erro ao processar foto original sem corte:', err);
+        img.src = '';
         resolve(null);
       }
     };
 
     img.onerror = () => {
       clearTimeout(timer);
+      img.src = '';
       resolve(null);
     };
 
@@ -227,8 +243,8 @@ export function calculateContainedDimensions(
  */
 export async function processPhotoForPdf(
   photo: PhotoSlot,
-  targetWidth = 770, // 38.5mm * 20 (high-res for crisp PDF print)
-  targetHeight = 960, // 48.0mm * 20
+  targetWidth = 600, // 38.5mm (~400 DPI ultra-nítido, 40% menor consumo de RAM)
+  targetHeight = 750, // 48.0mm
   allowCircle = true
 ): Promise<string> {
   if (!photo?.url) return '';
@@ -246,12 +262,15 @@ export async function processPhotoForPdf(
 
     img.onload = () => {
       clearTimeout(timer);
+      let canvas: HTMLCanvasElement | null = null;
       try {
-        const canvas = document.createElement('canvas');
+        canvas = document.createElement('canvas');
         canvas.width = targetWidth;
         canvas.height = targetHeight;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
+          disposeCanvas(canvas);
+          img.src = '';
           resolve('');
           return;
         }
@@ -303,28 +322,34 @@ export async function processPhotoForPdf(
           // Outer red circle matching UI (#dc2626)
           ctx.beginPath();
           ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
-          ctx.lineWidth = Math.max(3.5, targetWidth * 0.009);
+          ctx.lineWidth = Math.max(3, targetWidth * 0.009);
           ctx.strokeStyle = '#dc2626';
           ctx.stroke();
 
           // Inner center point matching CircleFocusModal
           ctx.beginPath();
-          ctx.arc(cx, cy, Math.max(2.5, targetWidth * 0.0045), 0, 2 * Math.PI);
+          ctx.arc(cx, cy, Math.max(2, targetWidth * 0.0045), 0, 2 * Math.PI);
           ctx.fillStyle = '#dc2626';
           ctx.fill();
 
           ctx.restore();
         }
 
-        resolve(canvas.toDataURL('image/jpeg', 0.92));
+        const out = canvas.toDataURL('image/jpeg', 0.90);
+        disposeCanvas(canvas);
+        img.src = '';
+        resolve(out);
       } catch (e) {
         console.error('Error processing photo for PDF', e);
+        disposeCanvas(canvas);
+        img.src = '';
         resolve(photo.url);
       }
     };
 
     img.onerror = () => {
       clearTimeout(timer);
+      img.src = '';
       resolve('');
     };
 

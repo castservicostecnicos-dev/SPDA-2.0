@@ -31,7 +31,7 @@ import {
   reconnectStoredDeviceFolder,
   BatchPhotoSaveItem,
 } from '../utils/photoDeviceSync';
-import { optimizeImageFileToBlob } from '../utils/imageOptimizer';
+import { optimizeImageFileToBlob, disposeCanvas } from '../utils/imageOptimizer';
 import { saveFieldPhoto, markPhotoAsSynced } from '../db/spdaDatabase';
 
 interface CameraCaptureModalProps {
@@ -204,13 +204,22 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     section: 'spda' | 'medicao' | 'quadros' | 'local',
     tower: string
   ) => {
-    // 1. Otimiza foto diretamente para Blob binário e DataURL
-    const optimized = await optimizeImageFileToBlob(
-      rawSource instanceof HTMLCanvasElement ? rawSource.toDataURL('image/jpeg', 0.85) : rawSource,
-      1280,
-      1280,
-      0.8
-    );
+    // 1. Otimiza foto diretamente com passagem única e liberação imediata de canvas
+    let optimizedBlob: Blob;
+    let optimizedDataUrl: string;
+
+    if (rawSource instanceof HTMLCanvasElement) {
+      optimizedDataUrl = rawSource.toDataURL('image/jpeg', 0.82);
+      optimizedBlob = await new Promise<Blob>((res) => {
+        rawSource.toBlob((b) => res(b || new Blob([], { type: 'image/jpeg' })), 'image/jpeg', 0.82);
+      });
+      // Libera imediatamente a memória GPU alocada pelo quadro do vídeo
+      disposeCanvas(rawSource);
+    } else {
+      const opt = await optimizeImageFileToBlob(rawSource, 1280, 1280, 0.82);
+      optimizedBlob = opt.blob;
+      optimizedDataUrl = opt.dataUrl;
+    }
 
     const existingCount = getSectionPhotoCount ? getSectionPhotoCount(section, tower) : sessionCount;
     const photoIndex = existingCount;
@@ -220,7 +229,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     const newId = `cam-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const photoSlot: PhotoSlot = {
       id: newId,
-      url: optimized.dataUrl,
+      url: optimizedDataUrl,
       caption: '',
       hasRedCircleMarker: section === 'spda',
       circleX: 50,
@@ -240,8 +249,8 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       towerName: tower,
       section,
       photoIndex,
-      blob: optimized.blob,
-      dataUrl: optimized.dataUrl,
+      blob: optimizedBlob,
+      dataUrl: optimizedDataUrl,
       diskFileName,
       hasRedCircleMarker: section === 'spda',
       circleX: 50,
@@ -261,7 +270,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     onPhotoCaptured(photoSlot, section);
 
     setCapturedThumbnails((prev) => [
-      { id: newId, url: optimized.dataUrl, section: getSectionSubfolderName(section) },
+      { id: newId, url: optimizedDataUrl, section: getSectionSubfolderName(section) },
       ...prev.slice(0, 7),
     ]);
 
@@ -742,7 +751,13 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 key={thumb.id}
                 className="w-11 h-11 rounded-lg overflow-hidden border border-white/40 flex-shrink-0 bg-slate-800 shadow relative"
               >
-                <img src={thumb.url} alt="Captura" className="w-full h-full object-cover" />
+                <img
+                  src={thumb.url}
+                  alt="Captura"
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-full object-cover"
+                />
                 <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] font-bold text-center text-white truncate">
                   {thumb.section}
                 </span>

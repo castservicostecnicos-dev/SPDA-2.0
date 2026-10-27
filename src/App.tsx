@@ -20,6 +20,7 @@ import { DigitalSignatureModal } from './components/DigitalSignatureModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { printReport, generatePdfBlob } from './utils/pdfGenerator';
 import { generateDocxBlob } from './utils/docxGenerator';
+import { getValidTowerNames, purgeOrphanPhotosAndTowers } from './utils/towerSorter';
 import {
   getConnectedDeviceFolderHandle,
   createCondoFolderTree,
@@ -172,17 +173,18 @@ export default function App() {
     loadReportFromStorage()
       .then((saved) => {
         if (saved) {
-          if (!saved.company?.logoUrl) {
-            saved.company = {
-              ...saved.company,
+          const sanitized = purgeOrphanPhotosAndTowers(saved);
+          if (!sanitized.company?.logoUrl) {
+            sanitized.company = {
+              ...sanitized.company,
               logoUrl: SJC_OFFICIAL_LOGO_DATA_URL,
             };
           }
-          if (!saved.torresData) {
-            saved.torresData = {};
+          if (!sanitized.torresData) {
+            sanitized.torresData = {};
           }
-          if (!saved.torresData['Área Comum']) {
-            saved.torresData['Área Comum'] = {
+          if (!sanitized.torresData['Área Comum']) {
+            sanitized.torresData['Área Comum'] = {
               id: 'area-comum',
               nome: 'Área Comum',
               spdaPhotos: [],
@@ -191,22 +193,22 @@ export default function App() {
               localPhotos: [],
             };
           }
-          if (!saved.digitalSignature) {
-            saved.digitalSignature = {
+          if (!sanitized.digitalSignature) {
+            sanitized.digitalSignature = {
               enabled: true,
               type: 'drawn',
-              signerName: saved.client?.tecnico || 'JÔNATAS PEREIRA PAVANELO',
-              signerRole: saved.client?.cargo || 'Engenheiro Eletricista',
-              signerCrea: saved.client?.crea || 'CREA-SP 5063896203',
-              signerArt: saved.client?.art || '',
+              signerName: sanitized.client?.tecnico || 'JÔNATAS PEREIRA PAVANELO',
+              signerRole: sanitized.client?.cargo || 'Engenheiro Eletricista',
+              signerCrea: sanitized.client?.crea || 'CREA-SP 5063896203',
+              signerArt: sanitized.client?.art || '',
               signedAt: new Date().toLocaleDateString('pt-BR'),
               hashSha256: 'SPDA-5419-A8F3-7C21-E9D4',
               showValidationStamp: true,
               certificateAuthority: 'Padrão ICP-Brasil / CREA Confea',
             };
           }
-          setReport(saved);
-          reportRef.current = saved;
+          setReport(sanitized);
+          reportRef.current = sanitized;
         }
         setIsStorageReady(true);
         const last = getLastSavedTimeFormatted();
@@ -229,30 +231,166 @@ export default function App() {
   const parsedNewReportTowerCount = Math.max(1, Math.min(50, parseInt(newReportTowerCountInput, 10) || 1));
 
   // Salvamento contínuo e automático contra falhas e travamentos do aparelho:
-  // Grava no IndexedDB imediatamente quando fotos são adicionadas/removidas, e a cada 1.2s para digitação de textos
+  // Grava no IndexedDB de forma leve e assíncrona com debounce de 2.5s
   useEffect(() => {
     if (!isStorageReady) return;
     setHasUnsavedChanges(true);
 
     const timer = setTimeout(() => {
-      saveReportToStorage(report)
+      saveReportToStorage(report, { fullSync: false })
         .then(() => {
           const now = new Date();
           const pad = (n: number) => String(n).padStart(2, '0');
           setLastSavedTime(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
         })
         .catch((err) => console.warn('Auto-save notice:', err));
-    }, 1200);
+    }, 2500);
 
     return () => clearTimeout(timer);
   }, [report, isStorageReady]);
 
-  // Handlers for client data
+  // Backup periódico seguro e sincronização mestre em segundo plano a cada 60s
+  useEffect(() => {
+    if (!isStorageReady) return;
+
+    const interval = setInterval(() => {
+      if (reportRef.current) {
+        saveReportToStorage(reportRef.current, { fullSync: true }).catch(() => {});
+      }
+    }, 60000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && reportRef.current) {
+        saveReportToStorage(reportRef.current, { fullSync: true }).catch(() => {});
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isStorageReady]);
+
+  // Handlers for client data com limpeza automática de torres e fotos órfãs
   const handleUpdateClient = (updated: Partial<ClientData>) => {
-    setReport((prev) => ({
-      ...prev,
-      client: { ...prev.client, ...updated },
-    }));
+    setReport((prev) => {
+      const mergedClient: ClientData = { ...prev.client, ...updated };
+
+      // Se quantidadeTorres ou torresNomes foram modificados, limpamos torres excluídas e fotos órfãs
+      if (updated.quantidadeTorres !== undefined || updated.torresNomes !== undefined) {
+        const tempReport: SpdaReport = { ...prev, client: mergedClient };
+        const newValidTowers = getValidTowerNames(tempReport);
+        const validTowerSet = new Set(newValidTowers);
+        validTowerSet.add('Área Comum');
+
+        // Limpa torresData removendo chaves de torres apagadas
+        const updatedTorresData: Record<string, TowerData> = {};
+        if (prev.torresData) {
+          Object.entries(prev.torresData).forEach(([tNome, data]) => {
+            if (validTowerSet.has(tNome)) {
+              updatedTorresData[tNome] = {
+                ...data,
+                spdaPhotos: (data.spdaPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName)),
+                measurementPhotos: (data.measurementPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName)),
+                quadrosPhotos: (data.quadrosPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName)),
+              };
+            }
+          });
+        }
+
+        // Se a torre atual em foco foi excluída, redireciona para a primeira válida
+        let nextCurrentTower = prev.torreAtual || newValidTowers[0] || 'Torre 1';
+        let nextSpda = prev.spdaPhotos.filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+        let nextMedicao = prev.measurementPhotos.filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+        let nextQuadros = prev.quadrosPhotos.filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+
+        if (!validTowerSet.has(nextCurrentTower)) {
+          nextCurrentTower = newValidTowers[0] || 'Torre 1';
+          const targetData = updatedTorresData[nextCurrentTower];
+          nextSpda = targetData ? [...targetData.spdaPhotos] : [];
+          nextMedicao = targetData ? [...targetData.measurementPhotos] : [];
+          nextQuadros = targetData ? [...targetData.quadrosPhotos] : [];
+        }
+
+        const cleaned: SpdaReport = {
+          ...prev,
+          client: mergedClient,
+          torreAtual: nextCurrentTower,
+          torresData: updatedTorresData,
+          spdaPhotos: nextSpda,
+          measurementPhotos: nextMedicao,
+          quadrosPhotos: nextQuadros,
+        };
+        saveReportToStorage(cleaned).catch(() => {});
+        return cleaned;
+      }
+
+      const updatedReport: SpdaReport = {
+        ...prev,
+        client: mergedClient,
+      };
+      saveReportToStorage(updatedReport).catch(() => {});
+      return updatedReport;
+    });
+  };
+
+  // Exclui uma torre e elimina todas as suas fotos permanentemente
+  const handleDeleteTower = (towerToDelete: string) => {
+    if (!towerToDelete || towerToDelete === 'Área Comum') return;
+
+    setReport((prev) => {
+      const currentValid = getValidTowerNames(prev);
+      const remainingTowers = currentValid.filter((t: string) => t !== towerToDelete);
+      const nextQtd = Math.max(1, remainingTowers.length);
+      const newTowerList = remainingTowers.length > 0 ? remainingTowers : ['Torre 1'];
+
+      // Remove do mapa torresData
+      const updatedTorresData = { ...(prev.torresData || {}) };
+      delete updatedTorresData[towerToDelete];
+
+      // Se a torre atual em visualização for a excluída, muda para a primeira remanescente
+      const nextCurrentTower = prev.torreAtual === towerToDelete
+        ? (newTowerList[0] || 'Torre 1')
+        : (prev.torreAtual || 'Torre 1');
+
+      const targetData = updatedTorresData[nextCurrentTower];
+
+      // Remove fotos órfãs das seções ativas
+      const nextSpda = prev.torreAtual === towerToDelete
+        ? (targetData ? [...targetData.spdaPhotos] : [])
+        : prev.spdaPhotos.filter((p) => p.towerName !== towerToDelete);
+
+      const nextMedicao = prev.torreAtual === towerToDelete
+        ? (targetData ? [...targetData.measurementPhotos] : [])
+        : prev.measurementPhotos.filter((p) => p.towerName !== towerToDelete);
+
+      const nextQuadros = prev.torreAtual === towerToDelete
+        ? (targetData ? [...targetData.quadrosPhotos] : [])
+        : prev.quadrosPhotos.filter((p) => p.towerName !== towerToDelete);
+
+      const updatedReport: SpdaReport = {
+        ...prev,
+        client: {
+          ...prev.client,
+          quantidadeTorres: nextQtd,
+          torresNomes: newTowerList,
+          descricaoBloco: nextCurrentTower,
+        },
+        torreAtual: nextCurrentTower,
+        torresData: updatedTorresData,
+        spdaPhotos: nextSpda,
+        measurementPhotos: nextMedicao,
+        quadrosPhotos: nextQuadros,
+      };
+
+      saveReportToStorage(updatedReport).catch(() => {});
+      return updatedReport;
+    });
+
+    setSaveToast(`✓ ${towerToDelete} e todas as suas fotos foram excluídas com sucesso!`);
+    setTimeout(() => setSaveToast(null), 4000);
   };
 
   // Handlers for company data
@@ -1154,6 +1292,7 @@ export default function App() {
                   onUpdateCompany={handleUpdateCompany}
                   onOpenDatabase={() => setIsDatabaseModalOpen(true)}
                   onOpenSignatureModal={() => setIsSignatureModalOpen(true)}
+                  onDeleteTower={handleDeleteTower}
                 />
               )}
               {activeTab === 'fotos' && (
@@ -1178,6 +1317,7 @@ export default function App() {
                   onRestoreReport={handleLoadReport}
                   onReportUpdated={handleUpdateReportSilently}
                   onAddTower={handleAddTower}
+                  onDeleteTower={handleDeleteTower}
                 />
               )}
               {activeTab === 'correcoes' && (
@@ -1228,6 +1368,7 @@ export default function App() {
                   onUpdateCompany={handleUpdateCompany}
                   onOpenDatabase={() => setIsDatabaseModalOpen(true)}
                   onOpenSignatureModal={() => setIsSignatureModalOpen(true)}
+                  onDeleteTower={handleDeleteTower}
                 />
                 <div className="mt-6 flex justify-end">
                   <button
@@ -1264,6 +1405,7 @@ export default function App() {
                   onRestoreReport={handleLoadReport}
                   onReportUpdated={handleUpdateReportSilently}
                   onAddTower={handleAddTower}
+                  onDeleteTower={handleDeleteTower}
                 />
                 <div className="mt-6 flex flex-col sm:flex-row justify-between gap-3">
                   <button
@@ -1579,6 +1721,7 @@ export default function App() {
         torreAtual={report.torreAtual || 'Torre 1'}
         onSelectTorre={handleSwitchTower}
         onAddTower={handleAddTower}
+        onDeleteTower={handleDeleteTower}
         getPhotoCount={getTowerPhotoCount}
         condominioNome={report.client.name}
       />

@@ -40,20 +40,25 @@ import {
   calculateContainedDimensions,
   UncroppedPhotoData,
 } from './pdfGenerator';
+import { disposeCanvas } from './imageOptimizer';
 
 /**
  * Gera a imagem PNG da marca d'água diagonal "SPDA 2026"
  * Exatamente igual ao ReportWatermark do ReportPreview e drawWatermark do PDF
  */
 export function generateWatermarkPngDataUrl(text = 'SPDA 2026'): string {
+  let canvas: HTMLCanvasElement | null = null;
   try {
     if (typeof document === 'undefined') return '';
-    const canvas = document.createElement('canvas');
+    canvas = document.createElement('canvas');
     // Canvas A4 em alta definição (1190 x 1684 px)
     canvas.width = 1190;
     canvas.height = 1684;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
+    if (!ctx) {
+      disposeCanvas(canvas);
+      return '';
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
@@ -70,9 +75,12 @@ export function generateWatermarkPngDataUrl(text = 'SPDA 2026'): string {
     ctx.fillText(text, 0, 0);
     ctx.restore();
 
-    return canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL('image/png');
+    disposeCanvas(canvas);
+    return dataUrl;
   } catch (err) {
     console.warn('Erro ao gerar marca d\'água para Word:', err);
+    disposeCanvas(canvas);
     return '';
   }
 }

@@ -150,19 +150,124 @@ export function compareTowerNames(a: string, b: string): number {
  * Se o usuário tiver fotografado na sequência: Torre 5 -> Torre 2 -> Torre 4 -> Torre 1,
  * esta função reorganiza para: Torre 1 -> Torre 2 -> Torre 4 -> Torre 5 em cada seção do laudo!
  */
+/**
+ * Retorna os nomes válidos e ativos de torres cadastrados no relatório.
+ */
+export function getValidTowerNames(report: SpdaReport): string[] {
+  const qtd = Math.max(1, report.client?.quantidadeTorres || 1);
+  const nomesFromClient = (report.client?.torresNomes || []).slice(0, qtd);
+  const validList: string[] = [];
+  for (let i = 0; i < qtd; i++) {
+    const raw = nomesFromClient[i]?.trim();
+    const defaultName = `Torre ${i + 1}`;
+    validList.push(raw && raw.length > 0 ? raw : defaultName);
+  }
+  return validList;
+}
+
+/**
+ * Remove completamente torres órfãs (torres apagadas ou excluídas) e suas fotos
+ * do objeto do laudo, garantindo que nunca permaneçam no banco ou no relatório final.
+ */
+export function purgeOrphanPhotosAndTowers(report: SpdaReport): SpdaReport {
+  const validTowerNames = getValidTowerNames(report);
+  const validTowerSet = new Set<string>(validTowerNames);
+  validTowerSet.add('Área Comum');
+
+  // Ajusta torreAtual caso tenha sido excluída
+  let currentTower = report.torreAtual || validTowerNames[0] || 'Torre 1';
+  if (!validTowerSet.has(currentTower)) {
+    currentTower = validTowerNames[0] || 'Torre 1';
+  }
+
+  // Limpa o mapa torresData
+  const cleanedTorresData: Record<string, TowerData> = {};
+  if (report.torresData) {
+    Object.entries(report.torresData).forEach(([tNome, data]) => {
+      if (!validTowerSet.has(tNome)) {
+        // Torre órfã descartada!
+        return;
+      }
+      cleanedTorresData[tNome] = {
+        ...data,
+        nome: tNome,
+        spdaPhotos: (data.spdaPhotos || []).filter((p) => !p.towerName || p.towerName === tNome || validTowerSet.has(p.towerName)),
+        measurementPhotos: (data.measurementPhotos || []).filter((p) => !p.towerName || p.towerName === tNome || validTowerSet.has(p.towerName)),
+        quadrosPhotos: (data.quadrosPhotos || []).filter((p) => !p.towerName || p.towerName === tNome || validTowerSet.has(p.towerName)),
+      };
+    });
+  }
+
+  // Filtra as fotos ativas caso contenham referências a torres apagadas
+  const cleanedSpda = (report.spdaPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+  const cleanedMedicao = (report.measurementPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+  const cleanedQuadros = (report.quadrosPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+
+  return {
+    ...report,
+    torreAtual: currentTower,
+    client: {
+      ...report.client,
+      quantidadeTorres: validTowerNames.length,
+      torresNomes: validTowerNames,
+    },
+    torresData: cleanedTorresData,
+    spdaPhotos: cleanedSpda,
+    measurementPhotos: cleanedMedicao,
+    quadrosPhotos: cleanedQuadros,
+  };
+}
+
+/**
+ * Consolida e organiza automaticamente todas as fotos do laudo por torre e por seção,
+ * ordenando estritamente do menor para o maior (ex: Torre 1, depois 2, depois 4, depois 5; ou A, B, C, D...).
+ * 
+ * Se o usuário tiver fotografado na sequência: Torre 5 -> Torre 2 -> Torre 4 -> Torre 1,
+ * esta função reorganiza para: Torre 1 -> Torre 2 -> Torre 4 -> Torre 5 em cada seção do laudo!
+ * 
+ * GARANTIA ANTIFALHA DE FOTOS ÓRFÃS:
+ * Se uma torre foi apagada ou excluída durante a vistoria, todas as suas fotos são
+ * sumariamente ignoradas e descartadas da consolidação de visualização, PDF e DOCX.
+ */
 export function consolidateReportPhotos(report: SpdaReport): SpdaReport {
-  // 1. Mapeia todos os dados de torres (as torres já em torresData + a torre ativa atual)
-  const currentTower = report.torreAtual || 'Torre 1';
+  const validTowerNames = getValidTowerNames(report);
+  const validTowerSet = new Set<string>(validTowerNames);
+  validTowerSet.add('Área Comum');
+
+  // Determina a torre ativa garantindo que não aponte para torre apagada
+  let currentTower = report.torreAtual || validTowerNames[0] || 'Torre 1';
+  if (!validTowerSet.has(currentTower)) {
+    currentTower = validTowerNames[0] || 'Torre 1';
+  }
+
+  // 1. Mapeia dados apenas de torres VÁLIDAS
   const allTowersMap: Record<string, TowerData> = {};
 
   if (report.torresData) {
     Object.entries(report.torresData).forEach(([tNome, data]) => {
+      // REGRA: Ignora torres que não existem mais na lista válida
+      if (!validTowerSet.has(tNome)) {
+        return;
+      }
+
+      // Se for Área Comum sem fotos e não é a torre ativa, não precisa consolidar
+      if (tNome === 'Área Comum') {
+        const hasAreaPhotos =
+          (data.spdaPhotos && data.spdaPhotos.length > 0) ||
+          (data.measurementPhotos && data.measurementPhotos.length > 0) ||
+          (data.quadrosPhotos && data.quadrosPhotos.length > 0) ||
+          (data.localPhotos && data.localPhotos.length > 0);
+        if (!hasAreaPhotos && currentTower !== 'Área Comum') {
+          return;
+        }
+      }
+
       allTowersMap[tNome] = {
         id: data.id || tNome.toLowerCase().replace(/\s+/g, '-'),
         nome: tNome,
-        spdaPhotos: [...(data.spdaPhotos || [])],
-        measurementPhotos: [...(data.measurementPhotos || [])],
-        quadrosPhotos: [...(data.quadrosPhotos || [])],
+        spdaPhotos: (data.spdaPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName)),
+        measurementPhotos: (data.measurementPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName)),
+        quadrosPhotos: (data.quadrosPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName)),
         localPhotos: [...(data.localPhotos || [])],
         equipmentPhotoUrl: data.equipmentPhotoUrl || report.equipmentPhotoUrl,
         conditions: data.conditions ? { ...data.conditions } : { ...report.conditions },
@@ -170,26 +275,31 @@ export function consolidateReportPhotos(report: SpdaReport): SpdaReport {
     });
   }
 
-  // Atualiza com a torre atualmente em edição ativa
+  // Atualiza com a torre atualmente em edição ativa (removendo fotos órfãs se houver)
+  const safeActiveSpda = (report.spdaPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+  const safeActiveMedicao = (report.measurementPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+  const safeActiveQuadros = (report.quadrosPhotos || []).filter((p) => !p.towerName || validTowerSet.has(p.towerName));
+
   allTowersMap[currentTower] = {
     id: currentTower.toLowerCase().replace(/\s+/g, '-'),
     nome: currentTower,
-    spdaPhotos: [...report.spdaPhotos],
-    measurementPhotos: [...report.measurementPhotos],
-    quadrosPhotos: [...report.quadrosPhotos],
+    spdaPhotos: [...safeActiveSpda],
+    measurementPhotos: [...safeActiveMedicao],
+    quadrosPhotos: [...safeActiveQuadros],
     localPhotos: [...report.localPhotos],
     equipmentPhotoUrl: report.equipmentPhotoUrl,
     conditions: { ...report.conditions },
   };
 
-  // Se não houver torres no mapa, usa a torre padrão
+  // Se não houver torres no mapa, usa a primeira torre válida
   if (Object.keys(allTowersMap).length === 0) {
-    allTowersMap['Torre 1'] = {
-      id: 'torre-1',
-      nome: 'Torre 1',
-      spdaPhotos: [...report.spdaPhotos],
-      measurementPhotos: [...report.measurementPhotos],
-      quadrosPhotos: [...report.quadrosPhotos],
+    const fallback = validTowerNames[0] || 'Torre 1';
+    allTowersMap[fallback] = {
+      id: fallback.toLowerCase().replace(/\s+/g, '-'),
+      nome: fallback,
+      spdaPhotos: [...safeActiveSpda],
+      measurementPhotos: [...safeActiveMedicao],
+      quadrosPhotos: [...safeActiveQuadros],
       localPhotos: [...report.localPhotos],
       equipmentPhotoUrl: report.equipmentPhotoUrl,
       conditions: { ...report.conditions },
@@ -203,7 +313,6 @@ export function consolidateReportPhotos(report: SpdaReport): SpdaReport {
   const consolidatedSpdaPhotos: PhotoSlot[] = [];
   const consolidatedMeasurementPhotos: PhotoSlot[] = [];
   const consolidatedQuadrosPhotos: PhotoSlot[] = [];
-  const consolidatedLocalPhotos: PhotoSlot[] = [];
 
   sortedTowerNames.forEach((tNome) => {
     const towerData = allTowersMap[tNome];
@@ -232,9 +341,6 @@ export function consolidateReportPhotos(report: SpdaReport): SpdaReport {
         towerName: photo.towerName || tNome,
       });
     });
-
-    // As fotos de SPDA, Medições e Quadros são organizadas por torre
-    // com identificação garantida da torre em cada foto
   });
 
   // Seção 3: Fachada, Vista Aérea e Equipamento pertencem exclusivamente ao condomínio / Torre 1
@@ -254,11 +360,13 @@ export function consolidateReportPhotos(report: SpdaReport): SpdaReport {
     torre1Data?.equipmentPhotoUrl || report.equipmentPhotoUrl || undefined;
 
   // Retorna o laudo com as fotos organizadas e ordenadas do menor para o maior em cada seção
+  // e com torresData limpo, sem torres órfãs
   return {
     ...report,
-    spdaPhotos: consolidatedSpdaPhotos.length > 0 ? consolidatedSpdaPhotos : report.spdaPhotos,
-    measurementPhotos: consolidatedMeasurementPhotos.length > 0 ? consolidatedMeasurementPhotos : report.measurementPhotos,
-    quadrosPhotos: consolidatedQuadrosPhotos.length > 0 ? consolidatedQuadrosPhotos : report.quadrosPhotos,
+    torreAtual: currentTower,
+    spdaPhotos: consolidatedSpdaPhotos.length > 0 ? consolidatedSpdaPhotos : safeActiveSpda,
+    measurementPhotos: consolidatedMeasurementPhotos.length > 0 ? consolidatedMeasurementPhotos : safeActiveMedicao,
+    quadrosPhotos: consolidatedQuadrosPhotos.length > 0 ? consolidatedQuadrosPhotos : safeActiveQuadros,
     localPhotos: propertyLocalPhotos,
     equipmentPhotoUrl: propertyEquipmentUrl,
     torresData: allTowersMap,

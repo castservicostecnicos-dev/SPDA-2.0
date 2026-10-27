@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ClientData, CompanyData, DigitalSignatureData } from '../types/spda';
 import { SJC_OFFICIAL_LOGO_DATA_URL } from '../assets/logo';
-import { Building2, UserCheck, Phone, MapPin, Calendar, FileText, Shield, Database, FileSignature } from 'lucide-react';
+import { Building2, UserCheck, Phone, MapPin, Calendar, FileText, Shield, Database, FileSignature, Trash2, AlertTriangle } from 'lucide-react';
 
 interface ClientDataFormProps {
   client: ClientData;
@@ -11,6 +11,7 @@ interface ClientDataFormProps {
   onUpdateCompany: (updated: Partial<CompanyData>) => void;
   onOpenDatabase?: () => void;
   onOpenSignatureModal?: () => void;
+  onDeleteTower?: (torre: string) => void;
 }
 
 export const ClientDataForm: React.FC<ClientDataFormProps> = ({
@@ -21,8 +22,10 @@ export const ClientDataForm: React.FC<ClientDataFormProps> = ({
   onUpdateCompany,
   onOpenDatabase,
   onOpenSignatureModal,
+  onDeleteTower,
 }) => {
   const [towerCountInput, setTowerCountInput] = React.useState<string>(String(client.quantidadeTorres || 1));
+  const [towerToDelete, setTowerToDelete] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setTowerCountInput(String(client.quantidadeTorres || 1));
@@ -333,10 +336,27 @@ export const ClientDataForm: React.FC<ClientDataFormProps> = ({
                               ✕
                             </button>
                           )}
+                          {(client.quantidadeTorres || 1) > 1 && onDeleteTower && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const targetName = torreVal.trim() || torreDefault;
+                                setTowerToDelete(targetName);
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                              title={`Excluir ${torreVal.trim() || torreDefault} e todas as suas fotos`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       );
                     })}
                   </div>
+                  <p className="mt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
+                    <span className="text-emerald-600 font-bold">✓ Proteção contra fotos órfãs:</span>
+                    Ao excluir uma torre, todas as fotos cadastradas nela são automaticamente eliminadas do laudo, do PDF e do DOCX.
+                  </p>
                 </div>
               </div>
             ) : (
@@ -629,6 +649,58 @@ export const ClientDataForm: React.FC<ClientDataFormProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal de Confirmação para Excluir Torre */}
+      {towerToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl p-5 max-w-sm w-full shadow-2xl text-white space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base leading-snug">
+                  Excluir {towerToDelete}?
+                </h3>
+                <p className="text-xs text-rose-300 font-medium">
+                  Ação irreversível
+                </p>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-lg border border-slate-800 space-y-1.5">
+              <p>
+                A <strong>{towerToDelete}</strong> e todas as fotos registradas nela serão <strong>completamente excluídas do laudo</strong>.
+              </p>
+              <p className="text-amber-300 text-[11px]">
+                ✓ Nenhuma foto órfã permanecerá no laudo, no PDF ou no documento Word.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setTowerToDelete(null)}
+                className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const toDel = towerToDelete;
+                  setTowerToDelete(null);
+                  onDeleteTower?.(toDel);
+                }}
+                className="px-3.5 py-2 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Excluir Torre e Fotos</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

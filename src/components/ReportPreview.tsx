@@ -375,6 +375,8 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                       <img
                         src={aerialPhoto!.url}
                         alt={aerialPhoto!.caption || 'Vista Aérea da Edificação'}
+                        loading="lazy"
+                        decoding="async"
                         className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
                       />
                     </div>
@@ -431,6 +433,8 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                     <img
                       src={facadePhoto!.url}
                       alt={facadePhoto!.caption || 'Fachada Principal da Edificação'}
+                      loading="lazy"
+                      decoding="async"
                       className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
                     />
                   </div>
@@ -495,6 +499,8 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                       <img
                         src={(aerialPhoto || facadePhoto)!.url}
                         alt={(aerialPhoto || facadePhoto)!.caption || 'Foto do Local'}
+                        loading="lazy"
+                        decoding="async"
                         className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
                       />
                     </div>
@@ -592,6 +598,8 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                         <img
                           src={photo.url}
                           alt={photo.caption || `Foto ${idx + 1}`}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover"
                         />
                         {(photo.hasRedCircleMarker ?? true) && (
@@ -718,7 +726,13 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                   return (
                     <div key={photo.id || idx} className="flex flex-col items-center flex-shrink-0">
                       <div className="w-[38.5mm] h-[45mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0">
-                        <img src={photo.url} alt={photo.caption || `Foto ${idx + 9}`} className="w-full h-full object-cover" />
+                        <img
+                          src={photo.url}
+                          alt={photo.caption || `Foto ${idx + 9}`}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover"
+                        />
                         {(photo.hasRedCircleMarker ?? true) && (
                           <div
                             className="absolute pointer-events-none"
@@ -775,7 +789,13 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
             <div className="bg-slate-50 border border-slate-200 rounded p-2.5 flex gap-3 items-center">
               {equipmentPhotoUrl ? (
                 <div className="w-[140px] h-[95px] bg-white border border-gray-300 rounded overflow-hidden flex items-center justify-center p-1 flex-shrink-0">
-                  <img src={equipmentPhotoUrl} alt="Miliohmímetro" className="max-w-full max-h-full object-contain" />
+                  <img
+                    src={equipmentPhotoUrl}
+                    alt="Miliohmímetro"
+                    loading="lazy"
+                    decoding="async"
+                    className="max-w-full max-h-full object-contain"
+                  />
                 </div>
               ) : null}
               <div className="flex-1 space-y-0.5">
@@ -858,7 +878,13 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                         className="w-[38.5mm] h-[44mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex flex-col items-center justify-between relative flex-shrink-0"
                       >
                         <div className={`w-[38.5mm] ${textBelow ? 'h-[36mm]' : 'h-full'} bg-slate-200 overflow-hidden flex items-center justify-center relative`}>
-                          <img src={photo.url} alt="Foto Medição" className="w-full h-full object-cover" />
+                          <img
+                            src={photo.url}
+                            alt="Foto Medição"
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-cover"
+                          />
                           {photo.towerName && (
                             <div className="absolute top-1 left-1 bg-slate-900/85 text-white text-[7px] font-bold px-1 py-0.5 rounded shadow z-10 uppercase tracking-wider">
                               {photo.towerName}
@@ -932,7 +958,13 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                       className="w-[38.5mm] h-[48mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex flex-col items-center justify-between relative flex-shrink-0"
                     >
                       <div className={`w-[38.5mm] ${textBelow ? 'h-[40mm]' : 'h-full'} bg-slate-200 overflow-hidden flex items-center justify-center relative`}>
-                        <img src={photo.url} alt="Foto Medição" className="w-full h-full object-cover" />
+                        <img
+                          src={photo.url}
+                          alt="Foto Medição"
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover"
+                        />
                         {photo.towerName && (
                           <div className="absolute top-1 left-1 bg-slate-900/85 text-white text-[7px] font-bold px-1 py-0.5 rounded shadow z-10 uppercase tracking-wider">
                             {photo.towerName}
@@ -1033,7 +1065,13 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                         className={`w-[38.5mm] ${cardHeight} bg-slate-100 border border-gray-300 rounded overflow-hidden flex flex-col items-center justify-between relative flex-shrink-0`}
                       >
                         <div className={`w-[38.5mm] ${imgHeight} bg-slate-200 overflow-hidden flex items-center justify-center relative`}>
-                          <img src={photo.url} alt={captionText || 'Foto Quadro'} className="w-full h-full object-cover" />
+                          <img
+                            src={photo.url}
+                            alt={captionText || 'Foto Quadro'}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-cover"
+                          />
                           {photo.hasRedCircleMarker && (
                             <div
                               className="absolute pointer-events-none"
@@ -1100,7 +1138,13 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                       className="w-[38.5mm] h-[48mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex flex-col items-center justify-between relative flex-shrink-0"
                     >
                       <div className={`w-[38.5mm] ${captionText ? 'h-[41mm]' : 'h-full'} bg-slate-200 overflow-hidden flex items-center justify-center relative`}>
-                        <img src={photo.url} alt={captionText || 'Foto Quadro'} className="w-full h-full object-cover" />
+                        <img
+                          src={photo.url}
+                          alt={captionText || 'Foto Quadro'}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover"
+                        />
                         {photo.towerName && (
                           <div className="absolute top-1 left-1 bg-slate-900/85 text-white text-[7px] font-bold px-1 py-0.5 rounded shadow z-10 uppercase tracking-wider">
                             {photo.towerName}
@@ -1211,6 +1255,8 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                     <img
                       src={report.digitalSignature.imageUrl}
                       alt="Assinatura Digital"
+                      loading="lazy"
+                      decoding="async"
                       className="max-h-16 max-w-full object-contain filter drop-shadow-2xs"
                     />
                   </div>

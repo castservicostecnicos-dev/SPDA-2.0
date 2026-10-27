@@ -28,7 +28,7 @@ import { SelectTowerModal } from './SelectTowerModal';
 import { RestorePhotosModal } from './RestorePhotosModal';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { RealFoldersSyncModal } from './RealFoldersSyncModal';
-import { optimizeImageFile, optimizeImageFileToBlob } from '../utils/imageOptimizer';
+import { optimizeImageFile, optimizeImageFileToBlob, optimizeHighFidelityPhoto } from '../utils/imageOptimizer';
 import { saveFieldPhoto } from '../db/spdaDatabase';
 import {
   downloadAllPhotosAsOrganizedZip,
@@ -45,16 +45,18 @@ import {
 } from '../utils/photoDeviceSync';
 
 /**
- * Lê o arquivo de imagem diretamente como DataURL sem redimensionar e sem cortar.
- * Utilizado para miliohmímetro, vista aérea e fachada do condomínio.
+ * Lê o arquivo de imagem otimizando para uma resolução nítida de alta fidelidade (máx 1600px)
+ * sem cortar nada e preservando 100% da proporção original.
+ * Utilizado para miliohmímetro, vista aérea e fachada do condomínio, evitando estouro de RAM no Chrome mobile.
  */
-function readOriginalFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (err) => reject(err);
-    reader.readAsDataURL(file);
-  });
+async function readSafeHighQualityPhotoUrl(file: File): Promise<string> {
+  try {
+    const res = await optimizeHighFidelityPhoto(file, 1600, 0.85);
+    return res.dataUrl;
+  } catch (err) {
+    console.warn('Fallback para otimizador seguro:', err);
+    return optimizeImageFile(file, 1280, 1280, 0.82);
+  }
 }
 
 interface PhotoUploaderSectionProps {
@@ -74,6 +76,7 @@ interface PhotoUploaderSectionProps {
   torreAtual?: string;
   onSelectTorre?: (torre: string) => void;
   onAddTower?: (nome?: string) => void;
+  onDeleteTower?: (torre: string) => void;
   getTowerPhotoCount?: (torre: string) => number;
   condominioNome?: string;
   // Backup & Restore
@@ -98,6 +101,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
   torreAtual = 'Torre 1',
   onSelectTorre,
   onAddTower,
+  onDeleteTower,
   getTowerPhotoCount,
   condominioNome,
   report,
@@ -1134,6 +1138,8 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                       <img
                         src={photo.url}
                         alt={`Foto SPDA ${index + 1}`}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover select-none pointer-events-none"
                       />
 
@@ -1357,6 +1363,8 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                     <img
                       src={photo.url}
                       alt={`Ponto de Medição ${index + 1}`}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                     <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/75 text-white text-[10px] font-bold rounded">
@@ -1554,6 +1562,8 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                       <img
                         src={photo.url}
                         alt={`Quadro ${index + 1}`}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover select-none pointer-events-none"
                       />
 
@@ -1707,7 +1717,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                 const file = e.target.files?.[0];
                 if (!file) return;
                 try {
-                  const url = await readOriginalFileAsDataUrl(file);
+                  const url = await readSafeHighQualityPhotoUrl(file);
                   const copy = [...localPhotos];
                   copy[0] = {
                     id: copy[0]?.id || `aerial-${Date.now()}`,
@@ -1730,6 +1740,8 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                   <img
                     src={localPhotos[0].url}
                     alt={localPhotos[0].caption || 'Vista Aérea'}
+                    loading="lazy"
+                    decoding="async"
                     className="max-w-full max-h-full object-contain rounded"
                   />
                   <button
@@ -1827,7 +1839,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                 const file = e.target.files?.[0];
                 if (!file) return;
                 try {
-                  const url = await readOriginalFileAsDataUrl(file);
+                  const url = await readSafeHighQualityPhotoUrl(file);
                   const copy = [...localPhotos];
                   if (!copy[0]) {
                     copy[0] = {
@@ -1858,6 +1870,8 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                   <img
                     src={localPhotos[1].url}
                     alt={localPhotos[1].caption || 'Fachada'}
+                    loading="lazy"
+                    decoding="async"
                     className="max-w-full max-h-full object-contain rounded"
                   />
                   <button
@@ -1951,7 +1965,13 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
               <div className="w-full sm:w-56 h-36 bg-slate-100 rounded-lg border border-slate-300 overflow-hidden flex items-center justify-center relative p-1.5 shadow-inner">
                 {equipmentPhotoUrl ? (
                   <>
-                    <img src={equipmentPhotoUrl} alt="HTM-01" className="max-w-full max-h-full object-contain" />
+                    <img
+                      src={equipmentPhotoUrl}
+                      alt="HTM-01"
+                      loading="lazy"
+                      decoding="async"
+                      className="max-w-full max-h-full object-contain"
+                    />
                     <button
                       type="button"
                       onClick={handleDeleteEquipmentPhoto}
@@ -1988,7 +2008,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                         const file = e.target.files?.[0];
                         if (!file) return;
                         try {
-                          const url = await readOriginalFileAsDataUrl(file);
+                          const url = await readSafeHighQualityPhotoUrl(file);
                           onUpdateEquipmentPhoto(url);
                         } catch (err) {
                           console.error('Erro ao salvar foto do instrumento', err);
@@ -2079,6 +2099,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
         torreAtual={torreAtual}
         onSelectTorre={(t) => onSelectTorre?.(t)}
         onAddTower={onAddTower}
+        onDeleteTower={onDeleteTower}
         getPhotoCount={getTowerPhotoCount}
         condominioNome={condominioNome}
       />
@@ -2138,8 +2159,8 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
           isOpen={isRealFoldersModalOpen}
           onClose={() => setIsRealFoldersModalOpen(false)}
           report={report}
-          onReportUpdated={(updated) => onReportUpdated?.(updated)}
-          onSyncComplete={(count, folderPath) => {
+          onReportUpdated={(updated: SpdaReport) => onReportUpdated?.(updated)}
+          onSyncComplete={(count: number, folderPath: string) => {
             showSyncToast(`✓ Pastas criadas em ${folderPath} (${count} fotos gravadas no disco)!`);
             getConnectedDeviceFolderHandle().then((h) => {
               if (h) setConnectedFolderName(h.name);
