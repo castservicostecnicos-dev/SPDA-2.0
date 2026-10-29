@@ -11,6 +11,11 @@ import {
   AlertCircle,
   Download,
   Upload,
+  Sparkles,
+  Info,
+  ShieldCheck,
+  Loader2,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { SpdaReport } from '../types/spda';
 import {
@@ -21,6 +26,8 @@ import {
   deleteSavedReportById,
   generateSequentialReportTitle,
 } from '../utils/storage';
+import { purgeOrphanPhotosAndTowers, countOrphanPhotos } from '../utils/towerSorter';
+import { importReportFile } from '../utils/documentImporter';
 
 interface SavedReportsModalProps {
   isOpen: boolean;
@@ -46,6 +53,8 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
   const [isLoadingId, setIsLoadingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatusText, setImportStatusText] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -100,7 +109,9 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
       setIsLoadingId(meta.id);
       const loaded = await loadSavedReportById(meta.id);
       if (loaded) {
-        onLoadReport(loaded);
+        // Limpa fotos órfãs e torres apagadas automaticamente ao abrir
+        const sanitized = purgeOrphanPhotosAndTowers(loaded);
+        onLoadReport(sanitized);
         onClose();
       } else {
         setFeedback({ message: 'Não foi possível carregar o laudo selecionado.', type: 'error' });
@@ -110,6 +121,32 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
       setFeedback({ message: 'Erro ao abrir laudo.', type: 'error' });
     } finally {
       setIsLoadingId(null);
+    }
+  };
+
+  // Limpeza explícita e manual de fotos órfãs no laudo atual
+  const handlePurgeCurrentReportOrphans = async () => {
+    try {
+      const orphanCount = countOrphanPhotos(currentReport);
+      const sanitized = purgeOrphanPhotosAndTowers(currentReport);
+      const result = await saveNamedReport(sanitized, { forceNew: false });
+      onLoadReport(result.updatedReport);
+      await loadList();
+      if (orphanCount > 0) {
+        setFeedback({
+          message: `🧹 Limpeza concluída: ${orphanCount} foto(s) de torre(s) apagada(s) foram removidas do laudo com sucesso!`,
+          type: 'success',
+        });
+      } else {
+        setFeedback({
+          message: '✓ Tudo limpo! Não há fotos órfãs. Todas as fotos registradas pertencem às torres ativas deste laudo.',
+          type: 'success',
+        });
+      }
+      setTimeout(() => setFeedback(null), 5000);
+    } catch (err) {
+      console.error(err);
+      setFeedback({ message: 'Erro ao limpar fotos órfãs.', type: 'error' });
     }
   };
 
@@ -134,41 +171,74 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
   // Exporta o laudo ativo atual como arquivo JSON de backup
   const handleExportBackup = () => {
     try {
-      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(currentReport, null, 2));
+      const sanitized = purgeOrphanPhotosAndTowers(currentReport);
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(sanitized, null, 2));
       const downloadAnchor = document.createElement('a');
-      const safeName = (currentReport.client?.name || 'laudo_spda').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeName = (sanitized.client?.name || 'laudo_spda').replace(/[^a-zA-Z0-9_-]/g, '_');
       downloadAnchor.setAttribute('href', dataStr);
       downloadAnchor.setAttribute('download', `backup_${safeName}_${Date.now()}.json`);
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
-      setFeedback({ message: 'Backup exportado com sucesso.', type: 'success' });
-      setTimeout(() => setFeedback(null), 3000);
+      setFeedback({ message: '✓ Backup completo (.json) exportado com sucesso!', type: 'success' });
+      setTimeout(() => setFeedback(null), 3500);
     } catch {
       setFeedback({ message: 'Erro ao exportar arquivo de backup.', type: 'error' });
     }
   };
 
-  // Importa arquivo JSON de backup
-  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Importa qualquer arquivo de laudo (PDF, Word .docx/.doc ou JSON de backup)
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const parsed = JSON.parse(event.target?.result as string);
-        if (parsed && (parsed.texts || parsed.client || parsed.spdaPhotos)) {
-          const result = await saveNamedReport(parsed, { forceNew: true });
-          onLoadReport(result.updatedReport);
-          onClose();
-        } else {
-          setFeedback({ message: 'Arquivo de backup inválido ou incompatível.', type: 'error' });
-        }
-      } catch {
-        setFeedback({ message: 'Erro ao ler o arquivo de backup selecionado.', type: 'error' });
+
+    try {
+      setIsImporting(true);
+      setImportStatusText(`Analisando "${file.name}"... Extraindo textos, dados do cliente e fotos.`);
+      const result = await importReportFile(file);
+
+      if (!result.success || !result.report) {
+        setFeedback({
+          message: result.error || 'Não foi possível importar este arquivo. Verifique se o arquivo não está corrompido.',
+          type: 'error',
+        });
+        return;
       }
-    };
-    reader.readAsText(file);
+
+      const imported = purgeOrphanPhotosAndTowers(result.report);
+      const titleToSave = imported.title || `Laudo - ${imported.client?.name || file.name.replace(/\.[^/.]+$/, '')}`;
+      imported.title = titleToSave;
+
+      const savedResult = await saveNamedReport(imported, { forceNew: true, customTitle: titleToSave });
+      await loadList();
+      onLoadReport(savedResult.updatedReport);
+
+      const info = result.extractedInfo;
+      const details = [
+        info.clientName ? `Cliente: ${info.clientName}` : '',
+        info.photosCount > 0 ? `${info.photosCount} fotos extraídas` : '',
+        info.towersDetected?.length ? `${info.towersDetected.length} torre(s)` : '',
+      ].filter(Boolean).join(' | ');
+
+      setFeedback({
+        message: `✓ Arquivo "${file.name}" importado com sucesso para edição! ${details ? `(${details})` : ''}`,
+        type: 'success',
+      });
+
+      setTimeout(() => {
+        onClose();
+      }, 1600);
+    } catch (err: any) {
+      console.error('Erro na importação:', err);
+      setFeedback({
+        message: `Erro ao importar arquivo: ${err?.message || 'Falha ao processar documento.'}`,
+        type: 'error',
+      });
+    } finally {
+      setIsImporting(false);
+      setImportStatusText('');
+      if (e.target) e.target.value = '';
+    }
   };
 
   if (!isOpen) return null;
@@ -250,29 +320,114 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
             </p>
           </div>
 
+          {/* Deteção e Limpeza de Fotos Órfãs */}
+          {(() => {
+            const detectedOrphans = countOrphanPhotos(currentReport);
+            return (
+              <div className={`p-3 rounded-lg border text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 ${
+                detectedOrphans > 0
+                  ? 'bg-amber-950/40 border-amber-500/60 text-amber-200'
+                  : 'bg-slate-800/40 border-slate-700/60 text-slate-300'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Sparkles className={`w-4 h-4 flex-shrink-0 ${detectedOrphans > 0 ? 'text-amber-400' : 'text-blue-400'}`} />
+                  <div>
+                    <span className="font-bold">
+                      {detectedOrphans > 0
+                        ? `Atenção: ${detectedOrphans} foto(s) de torre(s) apagada(s) detectada(s)!`
+                        : 'Fotos de Torres: Nenhuma foto órfã detectada'}
+                    </span>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {detectedOrphans > 0
+                        ? 'Exclua permanentemente fotos que ficaram órfãs antes de gerar o PDF ou DOCX.'
+                        : 'Todas as fotos registradas pertencem às torres ativas cadastradas.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePurgeCurrentReportOrphans}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer flex-shrink-0 ${
+                    detectedOrphans > 0
+                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md font-extrabold'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                  }`}
+                  title="Remove fotos vinculadas a torres inexistentes ou apagadas"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{detectedOrphans > 0 ? `LIMPAR ${detectedOrphans} FOTO(S) ÓRFÃS` : 'VERIFICAR / LIMPAR FOTOS'}</span>
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Feedback de Importação em andamento */}
+          {isImporting && (
+            <div className="bg-blue-950/70 border border-blue-500 rounded-lg p-3 text-xs text-blue-200 flex items-center gap-2.5 animate-pulse">
+              <Loader2 className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
+              <div>
+                <p className="font-bold text-white">Importando e processando documento...</p>
+                <p className="text-[11px] text-blue-300">{importStatusText || 'Extraindo textos, fotos e estrutura do laudo.'}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Guia informativo sobre formato de arquivos */}
+          <div className="bg-slate-800/50 border border-slate-700/80 rounded-lg p-3 text-xs space-y-1.5 text-slate-300">
+            <div className="flex items-center gap-1.5 font-bold text-blue-300">
+              <Info className="w-4 h-4 text-blue-400 flex-shrink-0" />
+              <span>Como abrir ou importar um laudo para edição:</span>
+            </div>
+            <ul className="text-[11px] text-slate-400 space-y-1 pl-5 list-disc">
+              <li>
+                <strong className="text-slate-200">Reabrir laudo salvo no celular/computador:</strong> Não precisa carregar arquivo! Basta localizar o laudo na lista abaixo e clicar em <strong className="text-blue-300">EDITAR</strong>.
+              </li>
+              <li>
+                <strong className="text-slate-200">Importar PDF ou Word (.docx / .doc):</strong> Você pode fazer o upload de um laudo antigo ou modelo em PDF ou DOCX. O sistema extrai automaticamente o nome do cliente, CNPJ, endereço, responsável técnico, CREA/ART, fotos e legendas para você editar livremente.
+              </li>
+              <li>
+                <strong className="text-slate-200">Backup Completo (.json):</strong> Arquivo de restauração com dados e fotos na íntegra.
+              </li>
+            </ul>
+          </div>
+
           {/* Lista de Laudos Salvos */}
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <h3 className="text-xs font-bold uppercase tracking-wide text-slate-300 flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-blue-400" />
                 Laudos salvos ({reportsList.length})
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={handleExportBackup}
-                  className="flex items-center gap-1 text-[11px] font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 rounded"
-                  title="Baixar arquivo de backup do laudo atual"
+                  className="flex items-center gap-1 text-[11px] font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 rounded cursor-pointer transition-colors"
+                  title="Baixar arquivo de backup (.json) com todas as fotos em alta resolução"
                 >
                   <Download className="w-3 h-3 text-blue-400" />
-                  <span>Exportar Arquivo</span>
+                  <span>Exportar Backup (.json)</span>
                 </button>
                 <label
-                  className="flex items-center gap-1 text-[11px] font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 rounded cursor-pointer"
-                  title="Restaurar laudo a partir de arquivo JSON"
+                  className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded cursor-pointer transition-all border shadow-xs ${
+                    isImporting
+                      ? 'bg-blue-950 text-blue-300 border-blue-600 opacity-70 cursor-not-allowed'
+                      : 'bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white border-blue-500/50'
+                  }`}
+                  title="Upload de Laudo em PDF, Word (.docx/.doc) ou JSON para servir como modelo ou edição"
                 >
-                  <Upload className="w-3 h-3 text-amber-400" />
-                  <span>Importar Arquivo</span>
-                  <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+                  {isImporting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-300" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5 text-cyan-300" />
+                  )}
+                  <span>{isImporting ? 'IMPORTANDO...' : 'Importar PDF / DOCX / JSON'}</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.doc,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/json"
+                    onChange={handleImportFile}
+                    disabled={isImporting}
+                    className="hidden"
+                  />
                 </label>
               </div>
             </div>

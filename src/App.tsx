@@ -20,7 +20,7 @@ import { DigitalSignatureModal } from './components/DigitalSignatureModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { printReport, generatePdfBlob } from './utils/pdfGenerator';
 import { generateDocxBlob } from './utils/docxGenerator';
-import { getValidTowerNames, purgeOrphanPhotosAndTowers } from './utils/towerSorter';
+import { getValidTowerNames, purgeOrphanPhotosAndTowers, countOrphanPhotos } from './utils/towerSorter';
 import {
   getConnectedDeviceFolderHandle,
   createCondoFolderTree,
@@ -51,6 +51,8 @@ import {
   X,
   Database,
   FileText,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import {
   saveReportToStorage,
@@ -63,6 +65,7 @@ import {
   deleteSavedReportById,
   getLastSavedTimeFormatted,
 } from './utils/storage';
+import { importReportFile } from './utils/documentImporter';
 
 export default function App() {
   const [report, setReport] = useState<SpdaReport>(defaultSpdaReport);
@@ -390,6 +393,21 @@ export default function App() {
     });
 
     setSaveToast(`✓ ${towerToDelete} e todas as suas fotos foram excluídas com sucesso!`);
+    setTimeout(() => setSaveToast(null), 4000);
+  };
+
+  // Limpeza de fotos órfãs sob demanda (fotos de torres apagadas)
+  const handlePurgeOrphans = () => {
+    const orphanCount = countOrphanPhotos(report);
+    const sanitized = purgeOrphanPhotosAndTowers(report);
+    setReport(sanitized);
+    reportRef.current = sanitized;
+    saveReportToStorage(sanitized, { fullSync: true }).catch(() => {});
+    if (orphanCount > 0) {
+      setSaveToast(`🧹 Limpeza concluída: ${orphanCount} foto(s) de torre(s) apagada(s) foram excluídas com sucesso!`);
+    } else {
+      setSaveToast('✓ O laudo está limpo! Nenhuma foto órfã encontrada.');
+    }
     setTimeout(() => setSaveToast(null), 4000);
   };
 
@@ -804,6 +822,8 @@ export default function App() {
       const towerCount = parsedNewReportTowerCount;
       const towerNames = Array.from({ length: towerCount }, (_, i) => `Torre ${i + 1}`);
 
+      const newId = `laudo-spda-${Date.now()}`;
+      blank.id = newId;
       blank.client.name = chosenCondoName;
       blank.client.quantidadeTorres = towerCount;
       blank.client.torresNomes = towerNames;
@@ -812,7 +832,11 @@ export default function App() {
 
       setReport(blank);
       reportRef.current = blank;
-      await saveReportToStorage(blank);
+      await saveReportToStorage(blank, { fullSync: true });
+      // Registra imediatamente no índice de laudos salvos para NUNCA sumir nem ser perdido
+      await saveNamedReport(blank, { forceNew: true, customTitle: blank.title });
+      const updatedList = await getSavedReportsList();
+      setSavedCount(updatedList.length);
       setHasUnsavedChanges(false);
       setActiveTab('fotos');
 
@@ -822,7 +846,7 @@ export default function App() {
         if (handle) {
           const treeRes = await createCondoFolderTree(chosenCondoName, towerNames);
           if (treeRes.success) {
-            setSaveToast(`✓ Novo laudo iniciado! Pastas criadas no disco em ${treeRes.folderPath}`);
+            setSaveToast(`✓ Novo laudo iniciado e salvo! Pastas criadas no disco em ${treeRes.folderPath}`);
             setTimeout(() => setSaveToast(null), 4000);
             return;
           }
@@ -832,12 +856,68 @@ export default function App() {
       }
 
       // Se a pasta física ainda não estiver conectada, avisa com elegância sem bloquear ou travar a tela
-      setSaveToast(`✓ Novo laudo "${chosenCondoName}" criado com ${towerCount} ${towerCount === 1 ? 'torre' : 'torres'}!`);
+      setSaveToast(`✓ Novo laudo "${chosenCondoName}" criado e salvo com sucesso! (${towerCount} ${towerCount === 1 ? 'torre' : 'torres'})`);
       setTimeout(() => setSaveToast(null), 3500);
     } catch (err) {
       console.error('Erro ao iniciar novo laudo:', err);
       setSaveToast('Erro ao iniciar novo laudo.');
       setTimeout(() => setSaveToast(null), 3000);
+    }
+  };
+
+  // Upload e importação direta de arquivos PDF, Word (.docx) ou JSON para edição
+  const [isDirectImporting, setIsDirectImporting] = useState(false);
+
+  const handleDirectFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsDirectImporting(true);
+      setSaveToast(`Processando "${file.name}"... Extraindo dados e fotos para edição.`);
+      const result = await importReportFile(file);
+
+      if (!result.success || !result.report) {
+        setConfirmModal({
+          title: 'Falha na Importação do Laudo',
+          message: result.error || 'Não foi possível ler este arquivo. Verifique se é um arquivo PDF, Word (.docx/.doc) ou JSON válido.',
+          confirmText: 'ENTENDIDO',
+          isDestructive: false,
+          onConfirm: () => {},
+        });
+        return;
+      }
+
+      const imported = purgeOrphanPhotosAndTowers(result.report);
+      const titleToSave = imported.title || `Laudo - ${imported.client?.name || file.name.replace(/\.[^/.]+$/, '')}`;
+      imported.title = titleToSave;
+
+      await saveNamedReport(imported, { forceNew: true, customTitle: titleToSave });
+      const list = await getSavedReportsList();
+      setSavedCount(list.length);
+      handleLoadReport(imported);
+
+      const info = result.extractedInfo;
+      const details = [
+        info.clientName ? `Cliente: ${info.clientName}` : '',
+        info.photosCount > 0 ? `${info.photosCount} fotos recuperadas` : '',
+        info.towersDetected?.length ? `${info.towersDetected.length} torre(s)` : '',
+      ].filter(Boolean).join(' | ');
+
+      setSaveToast(`✓ Laudo extraído de "${file.name}" carregado para edição! ${details ? `(${details})` : ''}`);
+      setTimeout(() => setSaveToast(null), 6000);
+    } catch (err: any) {
+      console.error('Erro na importação direta:', err);
+      setConfirmModal({
+        title: 'Erro ao Importar Documento',
+        message: `Ocorreu um erro ao processar o arquivo: ${err?.message || 'Erro desconhecido.'}`,
+        confirmText: 'FECHAR',
+        isDestructive: false,
+        onConfirm: () => {},
+      });
+    } finally {
+      setIsDirectImporting(false);
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -1005,6 +1085,31 @@ export default function App() {
               <span className="sm:hidden">LAUDOS</span>
               {savedCount > 0 && <span className="bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0.2 rounded-full font-bold">({savedCount})</span>}
             </button>
+
+            {/* 2.1 Importar Laudo / Modelo de PDF, Word (.docx) ou JSON */}
+            <label
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all border shadow-sm ${
+                isDirectImporting
+                  ? 'bg-cyan-950 text-cyan-300 border-cyan-500 opacity-80 cursor-not-allowed'
+                  : 'bg-slate-800 hover:bg-slate-700 text-cyan-300 border-cyan-500/40 hover:border-cyan-400'
+              }`}
+              title="Fazer upload de um Laudo em PDF ou Word (.docx/.doc) para abrir e editar como modelo"
+            >
+              {isDirectImporting ? (
+                <Loader2 className="w-4 h-4 text-cyan-400 animate-spin flex-shrink-0" />
+              ) : (
+                <Upload className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+              )}
+              <span className="hidden sm:inline">{isDirectImporting ? 'IMPORTANDO...' : 'IMPORTAR PDF/DOCX'}</span>
+              <span className="sm:hidden">{isDirectImporting ? '...' : 'IMPORTAR'}</span>
+              <input
+                type="file"
+                accept=".pdf,.docx,.doc,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/json"
+                onChange={handleDirectFileImport}
+                disabled={isDirectImporting}
+                className="hidden"
+              />
+            </label>
 
             {/* 3. Banco de Dados: Clientes, Condomínios, Laudos e Fotos em Campo */}
             <button
@@ -1318,6 +1423,7 @@ export default function App() {
                   onReportUpdated={handleUpdateReportSilently}
                   onAddTower={handleAddTower}
                   onDeleteTower={handleDeleteTower}
+                  onPurgeOrphans={handlePurgeOrphans}
                 />
               )}
               {activeTab === 'correcoes' && (
@@ -1406,6 +1512,7 @@ export default function App() {
                   onReportUpdated={handleUpdateReportSilently}
                   onAddTower={handleAddTower}
                   onDeleteTower={handleDeleteTower}
+                  onPurgeOrphans={handlePurgeOrphans}
                 />
                 <div className="mt-6 flex flex-col sm:flex-row justify-between gap-3">
                   <button

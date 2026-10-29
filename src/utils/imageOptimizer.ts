@@ -40,9 +40,9 @@ export function disposeCanvas(canvas?: HTMLCanvasElement | null) {
 
 export async function optimizeImageFileToBlob(
   source: File | Blob | string,
-  maxWidth = 1280,
-  maxHeight = 1280,
-  quality = 0.82
+  maxWidth = 2048,
+  maxHeight = 2048,
+  quality = 0.94
 ): Promise<OptimizedImageResult> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -67,7 +67,7 @@ export async function optimizeImageFileToBlob(
       let width = img.naturalWidth || img.width || 800;
       let height = img.naturalHeight || img.height || 600;
 
-      // Mantém proporção nativa estrita limitando às dimensões máximas
+      // Mantém proporção nativa estrita limitando às dimensões máximas de alta resolução
       if (width > height) {
         if (width > maxWidth) {
           height = Math.round((height * maxWidth) / width);
@@ -91,6 +91,10 @@ export async function optimizeImageFileToBlob(
         reject(new Error('Falha ao instanciar canvas 2D para otimização de foto'));
         return;
       }
+
+      // Habilita interpolação bicúbica de máxima qualidade ('high') para evitar qualquer granulação
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
 
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, width, height);

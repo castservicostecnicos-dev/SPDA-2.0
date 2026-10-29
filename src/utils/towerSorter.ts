@@ -219,6 +219,40 @@ export function purgeOrphanPhotosAndTowers(report: SpdaReport): SpdaReport {
 }
 
 /**
+ * Conta quantas fotos órfãs (fotos de torres apagadas ou inexistentes)
+ * existem atualmente no laudo.
+ */
+export function countOrphanPhotos(report: SpdaReport): number {
+  if (!report) return 0;
+  const validTowerNames = getValidTowerNames(report);
+  const validTowerSet = new Set<string>(validTowerNames);
+  validTowerSet.add('Área Comum');
+
+  let count = 0;
+
+  // Verifica fotos em torresData
+  if (report.torresData) {
+    Object.entries(report.torresData).forEach(([tNome, data]) => {
+      if (!validTowerSet.has(tNome)) {
+        count += (data.spdaPhotos?.length || 0) + (data.measurementPhotos?.length || 0) + (data.quadrosPhotos?.length || 0);
+      } else {
+        const orphanSpda = (data.spdaPhotos || []).filter((p) => p.towerName && !validTowerSet.has(p.towerName)).length;
+        const orphanMed = (data.measurementPhotos || []).filter((p) => p.towerName && !validTowerSet.has(p.towerName)).length;
+        const orphanQuad = (data.quadrosPhotos || []).filter((p) => p.towerName && !validTowerSet.has(p.towerName)).length;
+        count += orphanSpda + orphanMed + orphanQuad;
+      }
+    });
+  }
+
+  // Verifica fotos nos arrays ativos
+  const orphanActiveSpda = (report.spdaPhotos || []).filter((p) => p.towerName && !validTowerSet.has(p.towerName)).length;
+  const orphanActiveMed = (report.measurementPhotos || []).filter((p) => p.towerName && !validTowerSet.has(p.towerName)).length;
+  const orphanActiveQuad = (report.quadrosPhotos || []).filter((p) => p.towerName && !validTowerSet.has(p.towerName)).length;
+
+  return count + orphanActiveSpda + orphanActiveMed + orphanActiveQuad;
+}
+
+/**
  * Consolida e organiza automaticamente todas as fotos do laudo por torre e por seção,
  * ordenando estritamente do menor para o maior (ex: Torre 1, depois 2, depois 4, depois 5; ou A, B, C, D...).
  * 
@@ -372,3 +406,390 @@ export function consolidateReportPhotos(report: SpdaReport): SpdaReport {
     torresData: allTowersMap,
   };
 }
+
+/**
+ * Representa o grupo completo de inspeção de UMA torre no laudo:
+ * - Pontos de inspeção e ensaios de continuidade ôhmica
+ * - SPDA existente e captores
+ * - Quadros elétricos e proteção contra surtos (DPS)
+ */
+export interface TowerInspectionGroup {
+  towerName: string;
+  isAreaComum: boolean;
+  measurementPhotos: PhotoSlot[]; // 1. Pontos de inspeção / medição
+  spdaPhotos: PhotoSlot[];        // 2. SPDA existente
+  quadrosPhotos: PhotoSlot[];     // 3. Quadros com DPS
+  measurements: PhotoSlot[];      // alias para compatibilidade
+  spda: PhotoSlot[];              // alias para compatibilidade
+  quadros: PhotoSlot[];           // alias para compatibilidade
+  totalPhotos: number;
+}
+
+/**
+ * Ordenação das torres para apresentação no relatório (PDF, DOCX e Preview):
+ * Torres residenciais primeiro em ordem natural (Torre 1, 2... 7 ou A, B, C...),
+ * seguidas pela Área Comum (se houver).
+ */
+export function compareTowerNamesForReport(a: string, b: string): number {
+  if (!a && !b) return 0;
+  if (!a) return -1;
+  if (!b) return 1;
+
+  const cleanA = a.trim().toLowerCase();
+  const cleanB = b.trim().toLowerCase();
+
+  // No relatório final, Área Comum vai após as torres residenciais
+  if (cleanA === 'área comum' && cleanB !== 'área comum') return 1;
+  if (cleanB === 'área comum' && cleanA !== 'área comum') return -1;
+
+  return compareTowerNames(a, b);
+}
+
+/**
+ * Separa e agrupa o laudo fotográfico POR TORRE, contendo para cada torre:
+ * 1. Pontos de inspeção e ensaios de continuidade
+ * 2. SPDA existente
+ * 3. Quadros com DPS
+ * 
+ * Permite a apresentação do laudo no formato solicitado:
+ * - Torre 1: Ponto de inspeção, SPDA existente, quadros.
+ * - Torre 2: Ponto de inspeção, SPDA existente, quadros.
+ * - Torre 3: ...
+ */
+export function getTowerInspectionGroups(report: SpdaReport): TowerInspectionGroup[] {
+  const consolidated = consolidateReportPhotos(report);
+  const validTowerNames = getValidTowerNames(consolidated);
+  const validTowerSet = new Set<string>(validTowerNames);
+  validTowerSet.add('Área Comum');
+
+  const allTowersMap = consolidated.torresData || {};
+
+  // Lista de torres a incluir no laudo
+  const towerNamesToConsider = new Set<string>(validTowerNames);
+
+  // Se Área Comum tiver fotos cadastradas, inclui no relatório
+  const areaData = allTowersMap['Área Comum'];
+  if (
+    areaData &&
+    ((areaData.spdaPhotos && areaData.spdaPhotos.length > 0) ||
+      (areaData.measurementPhotos && areaData.measurementPhotos.length > 0) ||
+      (areaData.quadrosPhotos && areaData.quadrosPhotos.length > 0))
+  ) {
+    towerNamesToConsider.add('Área Comum');
+  }
+
+  // Ordena torres
+  const sortedNames = Array.from(towerNamesToConsider).sort(compareTowerNamesForReport);
+
+  const groups: TowerInspectionGroup[] = [];
+
+  sortedNames.forEach((tNome) => {
+    const data = allTowersMap[tNome];
+    const measurementPhotos = data?.measurementPhotos || [];
+    const spdaPhotos = data?.spdaPhotos || [];
+    const quadrosPhotos = data?.quadrosPhotos || [];
+
+    const total = measurementPhotos.length + spdaPhotos.length + quadrosPhotos.length;
+
+    // Inclui a torre no relatório
+    groups.push({
+      towerName: tNome,
+      isAreaComum: tNome === 'Área Comum',
+      measurementPhotos,
+      spdaPhotos,
+      quadrosPhotos,
+      measurements: measurementPhotos,
+      spda: spdaPhotos,
+      quadros: quadrosPhotos,
+      totalPhotos: total,
+    });
+  });
+
+  return groups;
+}
+
+/**
+ * Estatísticas e apontamentos de adequação de uma torre
+ */
+export interface TowerCorrectionStats {
+  towerName: string;
+  equipotentialCount: number; // Quantidade de pontos a equipotencializar
+  dpsMissingCount: number;    // Quantidade de quadros que precisam de DPS
+  otherNonCompliantCount: number; // Outras não conformidades marcadas
+  totalCorrections: number;
+  equipotentialItems: { caption: string; notes?: string; photoId?: string }[];
+  dpsItems: { caption: string; notes?: string; photoId?: string }[];
+  otherItems: { caption: string; notes?: string; photoId?: string }[];
+}
+
+export interface NonComplianceItem {
+  type: 'dps' | 'equipotential' | 'other';
+  caption: string;
+  notes?: string;
+}
+
+export interface NonComplianceRow {
+  towerName: string;
+  pointsNeedingEquipotentialization: number;
+  panelsNeedingDps: number;
+  otherNonCompliances: number;
+  total: number;
+  items: NonComplianceItem[];
+}
+
+/**
+ * Sumário executivo consolidado de não conformidades de todas as torres
+ */
+export interface ReportNonComplianceSummary {
+  byTower: Record<string, TowerCorrectionStats>;
+  orderedTowers: string[];
+  rows: NonComplianceRow[];
+  totalEquipotential: number;
+  totalEquipotentialization: number;
+  totalDpsMissing: number;
+  totalOther: number;
+  grandTotal: number;
+}
+
+/**
+ * Normaliza strings para detecção sem acentos e em minúsculas
+ */
+function normalizeInspectionText(text: string): string {
+  return (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Detecta se a legenda/observação indica falta de DPS
+ */
+export function isDpsMissingCaption(caption: string, notes?: string): boolean {
+  const norm = normalizeInspectionText(`${caption || ''} ${notes || ''}`);
+  if (!norm) return false;
+
+  return (
+    /(falta|sem|precisa|necessita|instalar|ausencia|nao\s+possui|nao\s+tem|ausente|faltante|danificado)\b.*?\bdps\b/.test(norm) ||
+    /\bdps\b.*?(falta|ausente|faltante|danificado|necessario|requerido)/.test(norm) ||
+    /quadro\s+sem\s+dps/.test(norm) ||
+    norm.includes('falta dps') ||
+    norm.includes('sem dps')
+  );
+}
+
+/**
+ * Detecta se a legenda/observação indica necessidade de equipotencialização
+ */
+export function isEquipotentialMissingCaption(caption: string, notes?: string): boolean {
+  const norm = normalizeInspectionText(`${caption || ''} ${notes || ''}`);
+  if (!norm) return false;
+
+  return (
+    /equipotencializ/.test(norm) ||
+    /falta\s+equipotencial/.test(norm) ||
+    /necessita\s+equipotencial/.test(norm) ||
+    /precisa\s+equipotencial/.test(norm) ||
+    /sem\s+equipotencial/.test(norm) ||
+    /nao\s+equipotencial/.test(norm) ||
+    /sem\s+continuidade/.test(norm) ||
+    /continuidade\s+reprovada/.test(norm) ||
+    norm.includes('falta aterrar') ||
+    norm.includes('nao aterrado')
+  );
+}
+
+/**
+ * Detecta outras irregularidades / não conformidades
+ */
+export function isOtherNonCompliantCaption(caption: string, notes?: string): boolean {
+  const norm = normalizeInspectionText(`${caption || ''} ${notes || ''}`);
+  if (!norm) return false;
+
+  if (isDpsMissingCaption(caption, notes) || isEquipotentialMissingCaption(caption, notes)) {
+    return false;
+  }
+
+  return /(nao\s+conforme|reprovado|rompido|corroido|danificado|cabo\s+solto|fora\s+de\s+norma|inadequado|irregular|oxidado)/.test(
+    norm
+  );
+}
+
+/**
+ * Analisa e contabiliza automaticamente todas as não conformidades registradas nas legendas
+ * das fotos de cada torre:
+ * - Pontos que necessitam equipotencialização ("falta equipotencializar", "equipotencializar", etc.)
+ * - Quadros que precisam de DPS ("falta DPS", "sem DPS", "instalar DPS", etc.)
+ * - Outras adequações
+ */
+export function analyzeTowerNonConformities(report: SpdaReport): ReportNonComplianceSummary {
+  const groups = getTowerInspectionGroups(report);
+  const byTower: Record<string, TowerCorrectionStats> = {};
+  const orderedTowers: string[] = [];
+
+  let totalEquipotential = 0;
+  let totalDpsMissing = 0;
+  let totalOther = 0;
+
+  groups.forEach((group) => {
+    const tNome = group.towerName;
+    orderedTowers.push(tNome);
+
+    const stats: TowerCorrectionStats = {
+      towerName: tNome,
+      equipotentialCount: 0,
+      dpsMissingCount: 0,
+      otherNonCompliantCount: 0,
+      totalCorrections: 0,
+      equipotentialItems: [],
+      dpsItems: [],
+      otherItems: [],
+    };
+
+    // Analisa fotos dos 3 tipos da torre
+    const allTowerPhotos: PhotoSlot[] = [
+      ...group.measurementPhotos,
+      ...group.spdaPhotos,
+      ...group.quadrosPhotos,
+    ];
+
+    allTowerPhotos.forEach((photo) => {
+      const cap = (photo.caption || '').trim();
+      const nts = (photo.notes || '').trim();
+      if (!cap && !nts) return;
+
+      const hasDpsIssue = isDpsMissingCaption(cap, nts);
+      const hasEquipIssue = isEquipotentialMissingCaption(cap, nts);
+      const hasOtherIssue = isOtherNonCompliantCaption(cap, nts);
+
+      if (hasDpsIssue) {
+        stats.dpsMissingCount++;
+        stats.dpsItems.push({
+          caption: cap || 'Quadro elétrico necessitando instalação de DPS',
+          notes: nts,
+          photoId: photo.id,
+        });
+      }
+
+      if (hasEquipIssue) {
+        stats.equipotentialCount++;
+        stats.equipotentialItems.push({
+          caption: cap || 'Ponto metálico necessitando equipotencialização ao SPDA',
+          notes: nts,
+          photoId: photo.id,
+        });
+      }
+
+      if (hasOtherIssue && !hasDpsIssue && !hasEquipIssue) {
+        stats.otherNonCompliantCount++;
+        stats.otherItems.push({
+          caption: cap || 'Item necessitando intervenção/correção técnica',
+          notes: nts,
+          photoId: photo.id,
+        });
+      }
+    });
+
+    stats.totalCorrections = stats.equipotentialCount + stats.dpsMissingCount + stats.otherNonCompliantCount;
+
+    totalEquipotential += stats.equipotentialCount;
+    totalDpsMissing += stats.dpsMissingCount;
+    totalOther += stats.otherNonCompliantCount;
+
+    byTower[tNome] = stats;
+  });
+
+  const rows: NonComplianceRow[] = orderedTowers.map((tNome) => {
+    const stats = byTower[tNome];
+    const items: NonComplianceItem[] = [];
+    (stats.dpsItems || []).forEach((d) => items.push({ type: 'dps', caption: d.caption, notes: d.notes }));
+    (stats.equipotentialItems || []).forEach((e) => items.push({ type: 'equipotential', caption: e.caption, notes: e.notes }));
+    (stats.otherItems || []).forEach((o) => items.push({ type: 'other', caption: o.caption, notes: o.notes }));
+
+    return {
+      towerName: tNome,
+      pointsNeedingEquipotentialization: stats.equipotentialCount,
+      panelsNeedingDps: stats.dpsMissingCount,
+      otherNonCompliances: stats.otherNonCompliantCount,
+      total: stats.totalCorrections,
+      items,
+    };
+  });
+
+  return {
+    byTower,
+    orderedTowers,
+    rows,
+    totalEquipotential,
+    totalEquipotentialization: totalEquipotential,
+    totalDpsMissing,
+    totalOther,
+    grandTotal: totalEquipotential + totalDpsMissing + totalOther,
+  };
+}
+
+/**
+ * Exporta a planilha Excel / CSV das não conformidades por torre, pronta para abrir no Microsoft Excel
+ */
+export function exportNonConformitiesToExcelCsv(report: SpdaReport): void {
+  const summary = analyzeTowerNonConformities(report);
+  const condoName = report.client?.name || 'Condominio';
+  const dataHoje = new Date().toLocaleDateString('pt-BR');
+
+  // Constrói CSV com delimitador ponto e vírgula (padrão Brasil/Excel) e BOM UTF-8 (\uFEFF)
+  let csv = '\uFEFF';
+
+  // Cabeçalho institucional
+  csv += `"LAUDO TÉCNICO DE INSPEÇÃO SPDA - NBR 5419:2026"\n`;
+  csv += `"QUADRO RESUMO DE ADEQUAÇÕES E NÃO CONFORMIDADES POR TORRE"\n`;
+  csv += `"CLIENTE / CONDOMÍNIO:";"${condoName}"\n`;
+  csv += `"LOCAL:";"${report.client?.local || ''}"\n`;
+  csv += `"RESPONSÁVEL TÉCNICO:";"${report.client?.tecnico || ''} - ${report.client?.crea || ''}"\n`;
+  csv += `"DATA DA EMISSÃO:";"${dataHoje}"\n\n`;
+
+  // Tabela 1: Resumo Quantitativo por Torre
+  csv += `"TABELA RESUMO EXECUTIVO POR TORRE"\n`;
+  csv += `"TORRE / BLOCO";"PONTOS A EQUIPOTENCIALIZAR";"QUADROS QUE PRECISAM DE DPS";"OUTRAS ADEQUAÇÕES";"TOTAL DE ITENS A CORRIGIR"\n`;
+
+  summary.orderedTowers.forEach((tNome) => {
+    const stats = summary.byTower[tNome];
+    if (stats) {
+      csv += `"${stats.towerName}";${stats.equipotentialCount};${stats.dpsMissingCount};${stats.otherNonCompliantCount};${stats.totalCorrections}\n`;
+    }
+  });
+
+  // Linha de total geral
+  csv += `"TOTAL GERAL DO CONDOMÍNIO";${summary.totalEquipotential};${summary.totalDpsMissing};${summary.totalOther};${summary.grandTotal}\n\n`;
+
+  // Tabela 2: Detalhamento Item a Item por Torre
+  csv += `"DETALHAMENTO DAS ADEQUAÇÕES APONTADAS POR TORRE"\n`;
+  csv += `"TORRE / BLOCO";"TIPO DE ADEQUAÇÃO";"DESCRIÇÃO / LEGENDA DO ITEM REGISTRADO";"OBSERVAÇÕES"\n`;
+
+  summary.orderedTowers.forEach((tNome) => {
+    const stats = summary.byTower[tNome];
+    if (stats) {
+      stats.equipotentialItems.forEach((item) => {
+        csv += `"${tNome}";"FALTA EQUIPOTENCIALIZAR";"${item.caption.replace(/"/g, '""')}";"${(item.notes || '').replace(/"/g, '""')}"\n`;
+      });
+      stats.dpsItems.forEach((item) => {
+        csv += `"${tNome}";"FALTA DPS NO QUADRO";"${item.caption.replace(/"/g, '""')}";"${(item.notes || '').replace(/"/g, '""')}"\n`;
+      });
+      stats.otherItems.forEach((item) => {
+        csv += `"${tNome}";"OUTRA NÃO CONFORMIDADE";"${item.caption.replace(/"/g, '""')}";"${(item.notes || '').replace(/"/g, '""')}"\n`;
+      });
+    }
+  });
+
+  // Trigger download
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeName = condoName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  a.href = url;
+  a.download = `resumo_adequacoes_spda_${safeName}_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+

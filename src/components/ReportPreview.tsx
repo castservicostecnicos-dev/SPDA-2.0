@@ -1,7 +1,16 @@
 import React from 'react';
 import { SpdaReport, PhotoSlot } from '../types/spda';
 import { ReportHeader, ReportFooter, ReportWatermark } from './ReportHeaderFooter';
-import { consolidateReportPhotos } from '../utils/towerSorter';
+import {
+  consolidateReportPhotos,
+  getTowerInspectionGroups,
+  analyzeTowerNonConformities,
+  TowerInspectionGroup,
+  exportNonConformitiesToExcelCsv,
+  isDpsMissingCaption,
+  isEquipotentialMissingCaption,
+} from '../utils/towerSorter';
+import { FileSpreadsheet, Download, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 interface ReportPreviewProps {
   report: SpdaReport;
@@ -82,33 +91,136 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
     return () => window.removeEventListener('resize', updateScale);
   }, []);
 
+interface TowerSectionBlock {
+  type: 'medicao' | 'spda' | 'quadros';
+  number: string;
+  title: string;
+  photos: PhotoSlot[];
+}
+
+interface TowerInspectionPage {
+  towerName: string;
+  isAreaComum: boolean;
+  pageIndexInTower: number;
+  totalTowerPages: number;
+  blocks: TowerSectionBlock[];
+}
+
+function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPage[] {
+  const allPages: TowerInspectionPage[] = [];
+
+  groups.forEach((group) => {
+    const sections: TowerSectionBlock[] = [
+      {
+        type: 'medicao',
+        number: '1',
+        title: 'PONTOS DE ENSAIO & CONTINUIDADE ÔHMICA (MILIOHMÍMETRO)',
+        photos: group.measurementPhotos,
+      },
+      {
+        type: 'spda',
+        number: '2',
+        title: 'VISTORIA DO SPDA EXISTENTE & CAPTORES',
+        photos: group.spdaPhotos,
+      },
+      {
+        type: 'quadros',
+        number: '3',
+        title: 'ANÁLISE DOS QUADROS DE ENERGIA & PROTEÇÃO CONTRA SURTOS (DPS)',
+        photos: group.quadrosPhotos,
+      },
+    ];
+
+    if (group.totalPhotos === 0) {
+      allPages.push({
+        towerName: group.towerName,
+        isAreaComum: group.isAreaComum,
+        pageIndexInTower: 1,
+        totalTowerPages: 1,
+        blocks: sections,
+      });
+      return;
+    }
+
+    const towerPages: TowerInspectionPage[] = [];
+    let currentBlocks: TowerSectionBlock[] = [];
+    let countInPage = 0;
+
+    sections.forEach((sec) => {
+      if (sec.photos.length === 0) return;
+
+      let remaining = [...sec.photos];
+      while (remaining.length > 0) {
+        const spaceLeft = 12 - countInPage;
+        if (spaceLeft <= 2 && countInPage > 0) {
+          towerPages.push({
+            towerName: group.towerName,
+            isAreaComum: group.isAreaComum,
+            pageIndexInTower: towerPages.length + 1,
+            totalTowerPages: 0,
+            blocks: currentBlocks,
+          });
+          currentBlocks = [];
+          countInPage = 0;
+        }
+
+        const takeCount = Math.min(remaining.length, Math.max(4, 12 - countInPage));
+        const slice = remaining.slice(0, takeCount);
+        remaining = remaining.slice(takeCount);
+
+        currentBlocks.push({
+          type: sec.type,
+          number: sec.number,
+          title: sec.title,
+          photos: slice,
+        });
+        countInPage += slice.length;
+
+        if (countInPage >= 12 && remaining.length > 0) {
+          towerPages.push({
+            towerName: group.towerName,
+            isAreaComum: group.isAreaComum,
+            pageIndexInTower: towerPages.length + 1,
+            totalTowerPages: 0,
+            blocks: currentBlocks,
+          });
+          currentBlocks = [];
+          countInPage = 0;
+        }
+      }
+    });
+
+    if (currentBlocks.length > 0) {
+      towerPages.push({
+        towerName: group.towerName,
+        isAreaComum: group.isAreaComum,
+        pageIndexInTower: towerPages.length + 1,
+        totalTowerPages: 0,
+        blocks: currentBlocks,
+      });
+    }
+
+    towerPages.forEach((p) => {
+      p.totalTowerPages = towerPages.length;
+    });
+
+    allPages.push(...towerPages);
+  });
+
+  return allPages;
+}
+
   // ========================================================
-  // PAGINAÇÃO DENSA E INTELIGENTE: ZERO ESPAÇOS VAZIOS
+  // PAGINAÇÃO ESTRUTURADA POR TORRE + QUADRO RESUMO EXECUTIVO
   // ========================================================
-
-  // Seção 5: Vistoria SPDA (até 8 fotos na primeira página, restante em blocos de 16)
-  const spdaPage1 = spdaPhotos.slice(0, 8);
-  const spdaRestantes = spdaPhotos.slice(8);
-  const spdaContChunks = chunkArray(spdaRestantes, 16);
-  const spdaPageCount = 1 + spdaContChunks.length;
-
-  // Seção 6: Medições (até 8 fotos na primeira página junto aos parâmetros, restante em blocos de 16)
-  const measurePage1 = measurementPhotos.slice(0, 8);
-  const measureRestantes = measurementPhotos.slice(8);
-  const measureContChunks = chunkArray(measureRestantes, 16);
-  const measurePageCount = 1 + measureContChunks.length;
-
-  // Seção 7: Quadros (acomoda até 16 fotos direto na primeira página sem pular desnecessariamente, restante em blocos de 16)
-  const quadrosPage1 = quadrosPhotos.slice(0, 16);
-  const quadrosRestantes = quadrosPhotos.slice(16);
-  const quadrosContChunks = chunkArray(quadrosRestantes, 16);
-  const quadrosPageCount = 1 + quadrosContChunks.length;
-
   const isMultiTower =
     Boolean(client.quantidadeTorres && client.quantidadeTorres > 1) ||
     Boolean(client.torresNomes && client.torresNomes.length > 1) ||
-    Object.keys(consolidated.torresData || {}).length > 1 ||
-    new Set([...spdaPhotos, ...measurementPhotos, ...quadrosPhotos].map((p) => p.towerName).filter(Boolean)).size > 1;
+    Object.keys(consolidated.torresData || {}).length > 1;
+
+  const towerGroups = React.useMemo(() => getTowerInspectionGroups(consolidated), [consolidated]);
+  const nonComplianceSummary = React.useMemo(() => analyzeTowerNonConformities(consolidated), [consolidated]);
+  const allTowerPages = React.useMemo(() => paginateTowerGroups(towerGroups), [towerGroups]);
 
   const aerialPhoto = localPhotos[0]?.url ? localPhotos[0] : null;
   const facadePhoto = localPhotos[1]?.url ? localPhotos[1] : null;
@@ -119,17 +231,17 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
   // 1: Capa
   // 2: 1) Introdução, Normas & 2) Dicionário (2 colunas)
   // 3: 3) Características, Fotos do Local (em destaque próprio) & 4) Histórico
-  // 4: 5) Vistoria SPDA (spdaPageCount páginas)
-  // 5: 6) Medições de Continuidade (measurePageCount páginas)
-  // 6: 7) Quadros de Energia & DPS (quadrosPageCount páginas)
-  // 7: 8) Recomendações Prioritárias & 9) Conclusão Final e Assinatura (1 página final unificada)
+  // 4: 5) Instrumento de Medição Miliohmímetro & Metodologia
+  // 5+: Relatório de Vistoria e Ensaios por Torre (allTowerPages.length)
+  // Penúltima: 6) Quadro Resumo de Adequações por Torre (Não Conformidades NBR 5419:2026)
+  // Última: 7) Recomendações Prioritárias + Conclusão Final & Assinatura
   const totalPages =
     1 + // Capa
     1 + // Intro, Normas & Dicionário
-    localPageCount + // Características, Vista Aérea (destaque) e Fachada (destaque) & Histórico
-    spdaPageCount + // Vistoria SPDA
-    measurePageCount + // Medições
-    quadrosPageCount + // Quadros
+    localPageCount + // Características, Vista Aérea e Fachada & Histórico
+    1 + // Instrumento de Medição Miliohmímetro
+    allTowerPages.length + // Páginas de todas as torres agrupadas
+    1 + // Quadro Resumo de Adequações por Torre
     1; // Recomendações Prioritárias + Conclusão Final & Assinatura
 
   let currentPageNum = 1;
@@ -563,75 +675,90 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
       )}
 
       {/* ========================================================
-          SEÇÃO 5: VISTORIA DO SPDA EXISTENTE
-          PADRÃO: 4 FOTOS POR LINHA COM DESTAQUE EM CÍRCULO VERMELHO
-          DENSO: SE HOUVER ATÉ 8 FOTOS OU ZERO FOTOS, PREENCHE COM PARECER E SUBSISTEMAS!
+          PÁGINA: INSTRUMENTAÇÃO TÉCNICA E PARÂMETROS NORMATIVOS (NBR 5419:2026 / NBR 5410)
           ======================================================== */}
-      <ResponsivePage scale={scale} dataPage="spda-1">
-        <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="spda-1">
+      <ResponsivePage scale={scale} dataPage="instrumentacao">
+        <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="instrumentacao">
           <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
           <ReportHeader company={company} />
 
-          <div className="relative z-10 text-[10px] leading-[1.38] text-slate-800 space-y-2.5 font-sans">
+          <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2 text-justify font-sans">
             <h2 className="text-[11.5px] font-bold text-slate-900 uppercase font-sans">
-              5) VISTORIA DO SPDA EXISTENTE & PARECER VISUAL
+              5) INSTRUMENTAÇÃO TÉCNICA E CRITÉRIOS DE INSPEÇÃO
             </h2>
 
-            <p className="text-[9.5px] text-justify leading-relaxed">
-              {texts.vistoriaSpdaTexto}
+            <p className="text-[9px] leading-relaxed">
+              {texts.medicoesContinuidadeTexto}
             </p>
 
-            {/* Grade de Fotos (se existirem) */}
-            {spdaPage1.length > 0 && (
-              <div
-                className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[4.5mm] w-full pt-0.5"
-                style={{ width: '170mm' }}
-              >
-                {spdaPage1.map((photo, idx) => {
-                  const tName = photo.towerName || 'Torre 1';
-                  const cap = photo.caption?.trim();
-                  const legendBelow = isMultiTower ? (cap ? `${tName} - ${cap}` : tName) : cap;
-
-                  return (
-                    <div key={photo.id || idx} className="flex flex-col items-center flex-shrink-0">
-                      <div className="w-[38.5mm] h-[45mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0">
-                        <img
-                          src={photo.url}
-                          alt={photo.caption || `Foto ${idx + 1}`}
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-cover"
-                        />
-                        {(photo.hasRedCircleMarker ?? true) && (
-                          <div
-                            className="absolute pointer-events-none"
-                            style={{
-                              left: `${photo.circleX ?? 50}%`,
-                              top: `${photo.circleY ?? 50}%`,
-                              width: `${(photo.circleRadius ?? 24) * 2.2}%`,
-                              height: `${(photo.circleRadius ?? 24) * 1.8}%`,
-                              transform: 'translate(-50%, -50%)',
-                            }}
-                            aria-hidden="true"
-                          >
-                            <div className="w-full h-full border-2 border-red-600 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.9)] flex items-center justify-center">
-                              <div className="w-1.5 h-1.5 bg-red-600 rounded-full opacity-80" />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {legendBelow && (
-                        <p className="text-[7.5px] font-bold text-slate-800 text-center truncate mt-0.5 px-0.5 max-w-[38.5mm]">
-                          {legendBelow}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+            {/* Instrumento Miliohmímetro */}
+            <div className="bg-slate-50 border border-slate-200 rounded p-2.5 flex gap-3 items-center">
+              {equipmentPhotoUrl ? (
+                <div className="w-[140px] h-[95px] bg-white border border-gray-300 rounded overflow-hidden flex items-center justify-center p-1 flex-shrink-0">
+                  <img
+                    src={equipmentPhotoUrl}
+                    alt="Miliohmímetro"
+                    loading="lazy"
+                    decoding="async"
+                    className="max-w-full max-h-full object-contain"
+                  />
+                </div>
+              ) : null}
+              <div className="flex-1 space-y-0.5">
+                <p className="text-[9.5px] font-bold text-slate-900">
+                  Miliohmímetro {texts.equipamentoModelo} - Marca: {texts.equipamentoMarca}
+                </p>
+                <p className="text-[8.5px] text-slate-600 leading-snug">
+                  {texts.equipamentoDescricao}
+                </p>
+                <div className="pt-0.5 text-[8.5px] font-semibold text-slate-800 space-y-0.2">
+                  <p><span className="text-slate-500 font-normal">Local de Aplicação:</span> {texts.medicoesLocal}</p>
+                  <p><span className="text-slate-500 font-normal">Corrente Injetada de Ensaio:</span> {texts.medicoesCorrenteAplicada}</p>
+                  <p><span className="text-slate-500 font-normal">Tipo de Corrente:</span> {texts.medicoesTipoCorrente}</p>
+                </div>
               </div>
-            )}
+            </div>
 
-            {/* Painel de Parecer Técnico */}
+            {/* Parâmetros Normativos NBR 5419 */}
+            <div className="border border-slate-200 rounded overflow-hidden">
+              <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
+                PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)
+              </div>
+              <div className="divide-y divide-slate-100 text-[8.5px]">
+                <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
+                  <div className="flex-1 min-w-0 pr-1">
+                    <span className="font-bold text-slate-900 break-words">Continuidade de Armaduras e Malhas: </span>
+                    <span className="text-slate-600 break-words">NBR 5419-3:2026 (Item 5.3.5)</span>
+                  </div>
+                  <span className="font-bold text-emerald-700 flex-shrink-0 text-right whitespace-nowrap">≤ 0,200 Ω (200 mΩ) [CONFORME]</span>
+                </div>
+                <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
+                  <div className="flex-1 min-w-0 pr-1">
+                    <span className="font-bold text-slate-900 break-words">Resistência de Equipotencialização: </span>
+                    <span className="text-slate-600 break-words">NBR 5419-3:2026 (Item 6.2)</span>
+                  </div>
+                  <span className="font-bold text-emerald-700 flex-shrink-0 text-right whitespace-nowrap">≤ 0,200 Ω (200 mΩ) [CONFORME]</span>
+                </div>
+                <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
+                  <div className="flex-1 min-w-0 pr-1">
+                    <span className="font-bold text-slate-900 break-words">Método de 4 Terminais (Kelvin): </span>
+                    <span className="text-slate-600 break-words">Injeção de corrente DC contínua eliminando resistência das pontas de prova</span>
+                  </div>
+                  <span className="font-bold text-emerald-700 flex-shrink-0 text-right whitespace-nowrap">APLICADO</span>
+                </div>
+                <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
+                  <div className="flex-1 min-w-0 pr-1">
+                    <span className="font-bold text-slate-900 break-words">Estado das Caixas de Inspeção: </span>
+                    <span className="text-slate-600 break-words">Aterramento & Equalização</span>
+                  </div>
+                  <span className={`font-bold flex-shrink-0 text-right whitespace-nowrap ${conditions.caixasInspecaoLimpas ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {conditions.caixasInspecaoLimpas ? 'CONFORME' : 'LIMPEZA PENDENTE'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Painel de Parecer Técnico Geral */}
             <div className="bg-slate-50 border border-slate-200 rounded p-2.5 text-justify">
               <p className="text-[9.5px] font-bold text-slate-900 uppercase mb-0.5">
                 ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:
@@ -696,495 +823,350 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ report, containerI
                 })}
               </div>
             </div>
+
+            {/* Diretriz NBR 5410 de DPS */}
+            <div className="bg-amber-50 border border-amber-200 rounded p-2 text-justify">
+              <p className="text-[8.5px] font-bold text-amber-950 uppercase mb-0.5">
+                PROTEÇÃO CONTRA SURTOS EM QUADROS ELÉTRICOS (ABNT NBR 5410 / NBR 5419-4):
+              </p>
+              <p className="text-[8px] text-amber-900 leading-snug">
+                Conforme preconizado nas normas técnicas vigentes, todos os quadros de distribuição de energia (QGBTs, quadros parciais e de comando) devem possuir Dispositivos de Proteção contra Surtos (DPS) coordenados tipo 1 e tipo 2 instalados e em pleno funcionamento. A ausência ou dano do DPS constitui grave não conformidade normativa.
+              </p>
+            </div>
           </div>
 
           <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
         </div>
       </ResponsivePage>
 
-      {/* Páginas de continuação de fotos do SPDA (se houver mais de 8 fotos) */}
-      {spdaContChunks.map((photosInPage, pIdx) => (
-        <ResponsivePage key={`spda-cont-${pIdx}`} scale={scale} dataPage={`spda-cont-${pIdx + 1}`}>
-          <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page={`spda-cont-${pIdx + 1}`}>
+      {/* ========================================================
+          VISTORIAS E ENSAIOS TÉCNICOS INDIVIDUALIZADOS POR TORRE
+          FORMATO REQUISITADO:
+          Torre 1: Pontos de Inspeção (Miliohmímetro) -> SPDA Existente -> Quadros & DPS
+          Torre 2: Pontos de Inspeção (Miliohmímetro) -> SPDA Existente -> Quadros & DPS
+          ... Cada torre tratada como um laudo completo individualizado!
+          ======================================================== */}
+      {allTowerPages.map((page, pIdx) => (
+        <ResponsivePage key={`tower-page-${page.towerName}-${pIdx}`} scale={scale} dataPage={`tower-${page.towerName}-${pIdx + 1}`}>
+          <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page={`tower-${page.towerName}-${pIdx + 1}`}>
             <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
             <ReportHeader company={company} />
 
-            <div className="relative z-10 text-[10px] leading-[1.4] text-slate-800 font-sans">
-              <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-3 font-sans">
-                5) VISTORIA DO SPDA EXISTENTE (CONTINUAÇÃO)
-              </h2>
+            <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2.5 font-sans">
+              {/* Banner da Torre */}
+              <div className="bg-slate-900 text-white px-3 py-1.5 rounded-sm flex items-center justify-between shadow-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-amber-400" />
+                  <h2 className="text-[11px] font-black uppercase tracking-wider">
+                    {page.isAreaComum ? 'VISTORIA TÉCNICA: ÁREA COMUM / EXTERNA' : `VISTORIA & ENSAIOS TÉCNICOS: ${page.towerName.toUpperCase()}`}
+                  </h2>
+                </div>
+                <div className="text-[8px] font-semibold text-slate-300">
+                  {page.totalTowerPages > 1 ? `Página ${page.pageIndexInTower} de ${page.totalTowerPages}` : 'Relatório por Torre'}
+                </div>
+              </div>
 
-              <div
-                className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[5mm] w-full"
-                style={{ width: '170mm' }}
-              >
-                {photosInPage.map((photo, idx) => {
-                  const tName = photo.towerName || 'Torre 1';
-                  const cap = photo.caption?.trim();
-                  const legendBelow = isMultiTower ? (cap ? `${tName} - ${cap}` : tName) : cap;
-
-                  return (
-                    <div key={photo.id || idx} className="flex flex-col items-center flex-shrink-0">
-                      <div className="w-[38.5mm] h-[45mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0">
-                        <img
-                          src={photo.url}
-                          alt={photo.caption || `Foto ${idx + 9}`}
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-cover"
-                        />
-                        {(photo.hasRedCircleMarker ?? true) && (
-                          <div
-                            className="absolute pointer-events-none"
-                            style={{
-                              left: `${photo.circleX ?? 50}%`,
-                              top: `${photo.circleY ?? 50}%`,
-                              width: `${(photo.circleRadius ?? 24) * 2.2}%`,
-                              height: `${(photo.circleRadius ?? 24) * 1.8}%`,
-                              transform: 'translate(-50%, -50%)',
-                            }}
-                            aria-hidden="true"
-                          >
-                            <div className="w-full h-full border-2 border-red-600 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.9)] flex items-center justify-center">
-                              <div className="w-1.5 h-1.5 bg-red-600 rounded-full opacity-80" />
-                            </div>
-                          </div>
-                        )}
+              {/* Blocos de seções dentro desta página da torre */}
+              {page.blocks.map((block, bIdx) => {
+                const totalPhotosInBlock = block.photos.length;
+                return (
+                  <div key={bIdx} className="space-y-1.5 pt-0.5">
+                    {/* Título da subseção */}
+                    <div className="flex items-center justify-between border-b border-slate-300 pb-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded bg-slate-800 text-white text-[8px] font-bold flex items-center justify-center">
+                          {block.number}
+                        </span>
+                        <h3 className="text-[10px] font-bold text-slate-900 uppercase">
+                          {block.title}
+                        </h3>
                       </div>
-                      {legendBelow && (
-                        <p className="text-[7.5px] font-bold text-slate-800 text-center truncate mt-0.5 px-0.5 max-w-[38.5mm]">
-                          {legendBelow}
-                        </p>
-                      )}
+                      <span className="text-[8px] text-slate-500 font-medium">
+                        {totalPhotosInBlock} {totalPhotosInBlock === 1 ? 'registro' : 'registros'}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
 
-            <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
-          </div>
-        </ResponsivePage>
-      ))}
-
-      {/* ========================================================
-          PÁGINA 5 (SEÇÃO 6): MEDIÇÕES DE CONTINUIDADE & INSTRUMENTO
-          DENSO: ACOMODA OS PONTOS FOTOGRÁFICOS OU A METODOLOGIA DE MEDIÇÃO!
-          ======================================================== */}
-      <ResponsivePage scale={scale} dataPage="medicao-1">
-        <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="medicao-1">
-          <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
-          <ReportHeader company={company} />
-
-          <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2 text-justify font-sans">
-            <h2 className="text-[11.5px] font-bold text-slate-900 uppercase font-sans">
-              6) MEDIÇÕES DE CONTINUIDADE OHMICA DOS CONDUTORES
-            </h2>
-
-            <p className="text-[9px] leading-relaxed">
-              {texts.medicoesContinuidadeTexto}
-            </p>
-
-            {/* Instrumento Miliohmímetro */}
-            <div className="bg-slate-50 border border-slate-200 rounded p-2.5 flex gap-3 items-center">
-              {equipmentPhotoUrl ? (
-                <div className="w-[140px] h-[95px] bg-white border border-gray-300 rounded overflow-hidden flex items-center justify-center p-1 flex-shrink-0">
-                  <img
-                    src={equipmentPhotoUrl}
-                    alt="Miliohmímetro"
-                    loading="lazy"
-                    decoding="async"
-                    className="max-w-full max-h-full object-contain"
-                  />
-                </div>
-              ) : null}
-              <div className="flex-1 space-y-0.5">
-                <p className="text-[9.5px] font-bold text-slate-900">
-                  Miliohmímetro {texts.equipamentoModelo} - Marca: {texts.equipamentoMarca}
-                </p>
-                <p className="text-[8.5px] text-slate-600 leading-snug">
-                  {texts.equipamentoDescricao}
-                </p>
-                <div className="pt-0.5 text-[8.5px] font-semibold text-slate-800 space-y-0.2">
-                  <p><span className="text-slate-500 font-normal">Local:</span> {texts.medicoesLocal}</p>
-                  <p><span className="text-slate-500 font-normal">Corrente Aplicada:</span> {texts.medicoesCorrenteAplicada}</p>
-                  <p><span className="text-slate-500 font-normal">Tipo de Corrente:</span> {texts.medicoesTipoCorrente}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Parâmetros Normativos NBR 5419 */}
-            <div className="border border-slate-200 rounded overflow-hidden">
-              <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
-                PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)
-              </div>
-              <div className="divide-y divide-slate-100 text-[8.5px]">
-                <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
-                  <div className="flex-1 min-w-0 pr-1">
-                    <span className="font-bold text-slate-900 break-words">Continuidade de Armaduras e Malhas: </span>
-                    <span className="text-slate-600 break-words">NBR 5419-3:2026 (Item 5.3.5)</span>
-                  </div>
-                  <span className="font-bold text-emerald-700 flex-shrink-0 text-right whitespace-nowrap">≤ 0,200 Ω (200 mΩ) [CONFORME]</span>
-                </div>
-                <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
-                  <div className="flex-1 min-w-0 pr-1">
-                    <span className="font-bold text-slate-900 break-words">Resistência de Equipotencialização: </span>
-                    <span className="text-slate-600 break-words">NBR 5419-3:2026 (Item 6.2)</span>
-                  </div>
-                  <span className="font-bold text-emerald-700 flex-shrink-0 text-right whitespace-nowrap">≤ 0,200 Ω (200 mΩ) [CONFORME]</span>
-                </div>
-                <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
-                  <div className="flex-1 min-w-0 pr-1">
-                    <span className="font-bold text-slate-900 break-words">Método de 4 Terminais (Kelvin): </span>
-                    <span className="text-slate-600 break-words">Injeção de corrente DC contínua</span>
-                  </div>
-                  <span className="font-bold text-emerald-700 flex-shrink-0 text-right whitespace-nowrap">APLICADO</span>
-                </div>
-                <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
-                  <div className="flex-1 min-w-0 pr-1">
-                    <span className="font-bold text-slate-900 break-words">Estado das Caixas de Inspeção: </span>
-                    <span className="text-slate-600 break-words">Aterramento & Equalização</span>
-                  </div>
-                  <span className={`font-bold flex-shrink-0 text-right whitespace-nowrap ${conditions.caixasInspecaoLimpas ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {conditions.caixasInspecaoLimpas ? 'CONFORME' : 'LIMPEZA PENDENTE'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Registros Fotográficos dos Pontos de Medição (se houver fotos cadastradas) */}
-            {measurePage1.length > 0 ? (
-              <div className="pt-1">
-                <p className="text-[9.5px] font-bold text-slate-900 uppercase mb-1.5">
-                  6.1) PONTOS DE MEDIÇÃO DE CONTINUIDADE OBTIDOS
-                </p>
-                <div
-                  className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[4mm] w-full"
-                  style={{ width: '170mm' }}
-                >
-                  {measurePage1.map((photo, idx) => {
-                    const tName = photo.towerName || 'Torre 1';
-                    const label = photo.caption?.trim();
-                    const val = photo.measurementValue?.trim();
-                    const towerText = isMultiTower ? tName : '';
-                    let textBelow = towerText ? (label ? `${towerText} - ${label}` : towerText) : (label || '');
-                    if (val) {
-                      textBelow = textBelow ? `${textBelow} (${val})` : `(${val})`;
-                    }
-
-                    return (
+                    {/* Grade de fotos (4 colunas) */}
+                    {totalPhotosInBlock > 0 ? (
                       <div
-                        key={photo.id || idx}
-                        className="w-[38.5mm] h-[44mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex flex-col items-center justify-between relative flex-shrink-0"
+                        className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[4mm] w-full"
+                        style={{ width: '170mm' }}
                       >
-                        <div className={`w-[38.5mm] ${textBelow ? 'h-[36mm]' : 'h-full'} bg-slate-200 overflow-hidden flex items-center justify-center relative`}>
-                          <img
-                            src={photo.url}
-                            alt="Foto Medição"
-                            loading="lazy"
-                            decoding="async"
-                            className="w-full h-full object-cover"
-                          />
-                          {photo.towerName && (
-                            <div className="absolute top-1 left-1 bg-slate-900/85 text-white text-[7px] font-bold px-1 py-0.5 rounded shadow z-10 uppercase tracking-wider">
-                              {photo.towerName}
-                            </div>
-                          )}
-                        </div>
-                        {textBelow && (
-                          <div className="w-full h-[8mm] py-0.5 px-0.5 bg-white border-t border-gray-200 text-center flex items-center justify-center">
-                            <p className="text-[7.5px] font-bold text-gray-800 truncate leading-tight px-0.5">
-                              {textBelow}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              /* Se não houver fotos, inclui quadro técnico dos pontos para manter a página densa */
-              <div className="border border-slate-200 rounded overflow-hidden mt-1">
-                <div className="bg-slate-100 px-3 py-1 font-bold text-[8.5px] text-slate-900 border-b border-slate-200">
-                  METODOLOGIA DE 4 TERMINAIS (KELVIN) E PONTOS DE ENSAIO
-                </div>
-                <div className="divide-y divide-slate-100 text-[8px]">
-                  <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
-                    <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">1. Malha de Captação para Descidas Principais:</span>
-                    <span className="font-bold text-emerald-700 text-right flex-shrink-0 max-w-[50%] break-words">Ensaio a 4 fios com injeção DC contínua [CONFORME]</span>
-                  </div>
-                  <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
-                    <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">2. Descidas para Caixas de Equalização / BEP:</span>
-                    <span className="font-bold text-emerald-700 text-right flex-shrink-0 max-w-[50%] break-words">Conexões mecânicas ensaiadas sob carga [CONFORME]</span>
-                  </div>
-                  <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
-                    <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">3. Malha de Aterramento para Estruturas Metálicas:</span>
-                    <span className="font-bold text-emerald-700 text-right flex-shrink-0 max-w-[50%] break-words">Equipotencialização de massas [CONFORME]</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+                        {block.photos.map((photo, phIdx) => {
+                          const cap = photo.caption?.trim() || '';
+                          const isDpsFlag = isDpsMissingCaption(cap);
+                          const isEquipFlag = isEquipotentialMissingCaption(cap);
+                          const val = photo.measurementValue?.trim();
+                          let labelText = cap;
+                          if (val) {
+                            labelText = labelText ? `${labelText} (${val})` : `(${val})`;
+                          }
 
-          <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
-        </div>
-      </ResponsivePage>
-
-      {/* Páginas de continuação de medição (se houver mais de 8 fotos) */}
-      {measureContChunks.map((photosInPage, pIdx) => (
-        <ResponsivePage key={`measure-cont-${pIdx}`} scale={scale} dataPage={`measure-cont-${pIdx + 1}`}>
-          <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page={`measure-cont-${pIdx + 1}`}>
-            <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
-            <ReportHeader company={company} />
-
-            <div className="relative z-10 text-[10px] leading-[1.4] text-slate-800 font-sans">
-              <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-3 font-sans">
-                6.1) PONTOS DE MEDIÇÃO (CONTINUAÇÃO)
-              </h2>
-
-              <div className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[5mm] w-full" style={{ width: '170mm' }}>
-                {photosInPage.map((photo, idx) => {
-                  const tName = photo.towerName || 'Torre 1';
-                  const towerText = isMultiTower ? tName : (photo.towerName ? `[${photo.towerName}]` : '');
-                  const label = photo.caption?.trim();
-                  const val = photo.measurementValue?.trim();
-                  const title = towerText ? (label ? `${towerText} - ${label}` : towerText) : label;
-                  const textBelow = [title, val ? `(${val})` : ''].filter(Boolean).join(' ');
-
-                  return (
-                    <div
-                      key={photo.id || idx}
-                      className="w-[38.5mm] h-[48mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex flex-col items-center justify-between relative flex-shrink-0"
-                    >
-                      <div className={`w-[38.5mm] ${textBelow ? 'h-[40mm]' : 'h-full'} bg-slate-200 overflow-hidden flex items-center justify-center relative`}>
-                        <img
-                          src={photo.url}
-                          alt="Foto Medição"
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-cover"
-                        />
-                        {photo.towerName && (
-                          <div className="absolute top-1 left-1 bg-slate-900/85 text-white text-[7px] font-bold px-1 py-0.5 rounded shadow z-10 uppercase tracking-wider">
-                            {photo.towerName}
-                          </div>
-                        )}
-                      </div>
-                      {textBelow && (
-                        <div className="w-full h-[8mm] py-0.5 px-0.5 bg-white border-t border-gray-200 text-center flex items-center justify-center">
-                          <p className="text-[7.5px] font-bold text-gray-800 truncate leading-tight">
-                            {textBelow}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
-          </div>
-        </ResponsivePage>
-      ))}
-
-      {/* ========================================================
-          PÁGINA 6 (SEÇÃO 7): ANÁLISE DOS QUADROS DE ENERGIA & DPS (NBR 5410)
-          DENSO: ACOMODA AS FOTOS DOS QUADROS OU A TABELA DE AUDITORIA DE QUADROS!
-          ======================================================== */}
-      <ResponsivePage scale={scale} dataPage="quadros-1">
-        <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="quadros-1">
-          <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
-          <ReportHeader company={company} />
-
-          <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2 text-justify font-sans">
-            <h2 className="text-[11.5px] font-bold text-slate-900 uppercase font-sans">
-              7) ANÁLISE DOS QUADROS DE ENERGIA (NBR 5410)
-            </h2>
-
-            <p className="text-[9px] leading-relaxed">
-              {texts.pontosInspecaoAvaliacao}
-            </p>
-
-            <div className="bg-gray-200 py-1 px-3 text-center rounded-xs">
-              <span className="text-[9.5px] font-bold text-slate-900 font-sans">
-                Avaliação dos Dispositivos de Proteção contra Surtos (DPS) - NBR 5410
-              </span>
-            </div>
-
-            <p className="text-[9px] leading-relaxed">
-              {texts.analiseQuadrosTexto}
-            </p>
-
-
-
-            {/* Fotos dos Quadros (se existirem) - Até 16 fotos acomodadas em uma única página */}
-            {quadrosPage1.length > 0 ? (
-              <div className="pt-1">
-                <p className="text-[9.5px] font-bold text-slate-900 uppercase mb-1.5">
-                  REGISTROS FOTOGRÁFICOS DOS QUADROS DE ENERGIA
-                </p>
-                <div
-                  className={`grid grid-cols-4 gap-x-[5.33mm] ${
-                    quadrosPage1.length > 12
-                      ? 'gap-y-[3mm]'
-                      : quadrosPage1.length > 8
-                      ? 'gap-y-[3.5mm]'
-                      : 'gap-y-[4.5mm]'
-                  } w-full`}
-                  style={{ width: '170mm' }}
-                >
-                  {quadrosPage1.map((photo, idx) => {
-                    const tName = photo.towerName || 'Torre 1';
-                    const towerText = isMultiTower ? tName : (photo.towerName ? `[${photo.towerName}]` : '');
-                    const cap = photo.caption?.trim();
-                    const captionText = towerText ? (cap ? `${towerText} - ${cap}` : towerText) : cap;
-                    const cardHeight =
-                      quadrosPage1.length > 12
-                        ? 'h-[40mm]'
-                        : quadrosPage1.length > 8
-                        ? 'h-[44mm]'
-                        : 'h-[48mm]';
-                    const imgHeight =
-                      captionText
-                        ? quadrosPage1.length > 12
-                          ? 'h-[33.5mm]'
-                          : quadrosPage1.length > 8
-                          ? 'h-[37mm]'
-                          : 'h-[41mm]'
-                        : 'h-full';
-                    const capHeight =
-                      quadrosPage1.length > 12
-                        ? 'h-[6.5mm]'
-                        : 'h-[7mm]';
-
-                    return (
-                      <div
-                        key={photo.id || idx}
-                        className={`w-[38.5mm] ${cardHeight} bg-slate-100 border border-gray-300 rounded overflow-hidden flex flex-col items-center justify-between relative flex-shrink-0`}
-                      >
-                        <div className={`w-[38.5mm] ${imgHeight} bg-slate-200 overflow-hidden flex items-center justify-center relative`}>
-                          <img
-                            src={photo.url}
-                            alt={captionText || 'Foto Quadro'}
-                            loading="lazy"
-                            decoding="async"
-                            className="w-full h-full object-cover"
-                          />
-                          {photo.hasRedCircleMarker && (
+                          return (
                             <div
-                              className="absolute pointer-events-none"
-                              style={{
-                                left: `${photo.circleX ?? 50}%`,
-                                top: `${photo.circleY ?? 50}%`,
-                                width: `${(photo.circleRadius ?? 24) * 2.2}%`,
-                                height: `${(photo.circleRadius ?? 24) * 1.8}%`,
-                                transform: 'translate(-50%, -50%)',
-                              }}
-                              aria-hidden="true"
+                              key={photo.id || phIdx}
+                              className="flex flex-col items-center flex-shrink-0"
                             >
-                              <div className="w-full h-full border-2 border-red-600 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.9)] flex items-center justify-center">
-                                <div className="w-1.5 h-1.5 bg-red-600 rounded-full opacity-80" />
+                              <div className="w-[38.5mm] h-[45mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
+                                <img
+                                  src={photo.url}
+                                  alt={cap || `Foto ${phIdx + 1}`}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="w-full h-full object-cover"
+                                />
+
+                                {/* Badge de Alerta Não Conformidade quando identificado */}
+                                {isDpsFlag && (
+                                  <div className="absolute top-1 right-1 bg-red-600 text-white text-[6.5px] font-black px-1 py-0.2 rounded shadow z-10 tracking-wider">
+                                    FALTA DPS
+                                  </div>
+                                )}
+                                {isEquipFlag && !isDpsFlag && (
+                                  <div className="absolute top-1 right-1 bg-amber-600 text-white text-[6.5px] font-black px-1 py-0.2 rounded shadow z-10 tracking-wider">
+                                    EQUIPOTENCIALIZAR
+                                  </div>
+                                )}
+
+                                {/* Marcador de Foco Circular Vermelho */}
+                                {(photo.hasRedCircleMarker ?? true) && (
+                                  <div
+                                    className="absolute pointer-events-none"
+                                    style={{
+                                      left: `${photo.circleX ?? 50}%`,
+                                      top: `${photo.circleY ?? 50}%`,
+                                      width: `${(photo.circleRadius ?? 24) * 2.2}%`,
+                                      height: `${(photo.circleRadius ?? 24) * 1.8}%`,
+                                      transform: 'translate(-50%, -50%)',
+                                    }}
+                                    aria-hidden="true"
+                                  >
+                                    <div className="w-full h-full border-2 border-red-600 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.9)] flex items-center justify-center">
+                                      <div className="w-1.5 h-1.5 bg-red-600 rounded-full opacity-80" />
+                                    </div>
+                                  </div>
+                                )}
                               </div>
+
+                              {labelText && (
+                                <p
+                                  className={`text-[7.5px] font-bold text-center truncate mt-0.5 px-0.5 max-w-[38.5mm] leading-tight ${
+                                    isDpsFlag ? 'text-red-700' : isEquipFlag ? 'text-amber-700' : 'text-slate-800'
+                                  }`}
+                                  title={labelText}
+                                >
+                                  {labelText}
+                                </p>
+                              )}
                             </div>
-                          )}
-                        </div>
-                        {captionText && (
-                          <div className={`w-full ${capHeight} py-0.5 px-0.5 bg-white border-t border-gray-200 text-center flex items-center justify-center`}>
-                            <p className="text-[7.5px] font-bold text-gray-800 truncate leading-tight">
-                              {captionText}
-                            </p>
-                          </div>
-                        )}
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              /* Registro fotográfico facultativo conforme NBR 5410 */
-              <div className="border border-slate-200 bg-slate-50 rounded p-3 text-center text-slate-700 text-[8.5px] mt-2 font-medium">
-                Registro fotográfico facultativo conforme escopo de vistoria. Quadros de distribuição e dispositivos DPS inspecionados em conformidade com as diretrizes da NBR 5410.
-              </div>
-            )}
-          </div>
-
-          <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
-        </div>
-      </ResponsivePage>
-
-      {/* Páginas de continuação dos quadros (apenas se houver mais de 16 fotos) */}
-      {quadrosContChunks.map((chunk, cIdx) => (
-        <ResponsivePage key={`quadros-cont-${cIdx}`} scale={scale} dataPage={`quadros-cont-${cIdx + 1}`}>
-          <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page={`quadros-cont-${cIdx + 1}`}>
-            <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
-            <ReportHeader company={company} />
-
-            <div className="relative z-10 text-[10px] leading-[1.4] text-slate-800 font-sans">
-              <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-3 font-sans">
-                7) ANÁLISE DOS QUADROS DE ENERGIA (CONTINUAÇÃO)
-              </h2>
-
-              <div className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[4.5mm] w-full" style={{ width: '170mm' }}>
-                {chunk.map((photo, idx) => {
-                  const tName = photo.towerName || 'Torre 1';
-                  const towerText = isMultiTower ? tName : (photo.towerName ? `[${photo.towerName}]` : '');
-                  const cap = photo.caption?.trim();
-                  const captionText = towerText ? (cap ? `${towerText} - ${cap}` : towerText) : cap;
-                  return (
-                    <div
-                      key={photo.id || idx}
-                      className="w-[38.5mm] h-[48mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex flex-col items-center justify-between relative flex-shrink-0"
-                    >
-                      <div className={`w-[38.5mm] ${captionText ? 'h-[41mm]' : 'h-full'} bg-slate-200 overflow-hidden flex items-center justify-center relative`}>
-                        <img
-                          src={photo.url}
-                          alt={captionText || 'Foto Quadro'}
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-cover"
-                        />
-                        {photo.towerName && (
-                          <div className="absolute top-1 left-1 bg-slate-900/85 text-white text-[7px] font-bold px-1 py-0.5 rounded shadow z-10 uppercase tracking-wider">
-                            {photo.towerName}
-                          </div>
-                        )}
-                        {photo.hasRedCircleMarker && (
-                          <div
-                            className="absolute pointer-events-none"
-                            style={{
-                              left: `${photo.circleX ?? 50}%`,
-                              top: `${photo.circleY ?? 50}%`,
-                              width: `${(photo.circleRadius ?? 24) * 2.2}%`,
-                              height: `${(photo.circleRadius ?? 24) * 1.8}%`,
-                              transform: 'translate(-50%, -50%)',
-                            }}
-                            aria-hidden="true"
-                          >
-                            <div className="w-full h-full border-2 border-red-600 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.9)] flex items-center justify-center">
-                              <div className="w-1.5 h-1.5 bg-red-600 rounded-full opacity-80" />
-                            </div>
-                          </div>
-                        )}
+                    ) : (
+                      <div className="border border-slate-200 bg-slate-50/70 rounded p-2 text-center text-slate-600 text-[8px] italic">
+                        Nenhum registro fotográfico nesta seção para esta torre. Ensaio ou inspeção em conformidade técnica.
                       </div>
-                      {captionText && (
-                        <div className="w-full h-[7mm] py-0.5 px-0.5 bg-white border-t border-gray-200 text-center flex items-center justify-center">
-                          <p className="text-[7.5px] font-bold text-gray-800 truncate leading-tight">
-                            {captionText}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
           </div>
         </ResponsivePage>
       ))}
+
+      {/* ========================================================
+          PÁGINA EXECUTIVA: QUADRO RESUMO DE ADEQUAÇÕES POR TORRE
+          CONTABILIZAÇÃO AUTOMÁTICA DE NÃO CONFORMIDADES:
+          - Pontos a equipotencializar
+          - Quadros que precisam de DPS
+          - Outras não conformidades
+          - Totais gerais do condomínio + exportação para Excel
+          ======================================================== */}
+      <ResponsivePage scale={scale} dataPage="resumo-nao-conformidades">
+        <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="resumo-nao-conformidades">
+          <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
+          <ReportHeader company={company} />
+
+          <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2.5 font-sans">
+            <div>
+              <div className="flex items-center justify-between border-b border-slate-300 pb-1 mb-1">
+                <h2 className="text-[11.5px] font-bold text-slate-900 uppercase font-sans">
+                  6) QUADRO RESUMO DE ADEQUAÇÕES POR TORRE (NÃO CONFORMIDADES NBR 5419:2026)
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => exportNonConformitiesToExcelCsv(consolidated)}
+                  className="print:hidden text-[8px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded shadow flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Baixar planilha Excel com o resumo quantitativo"
+                >
+                  <FileSpreadsheet className="w-3 h-3" />
+                  EXPORTAR EXCEL (.CSV)
+                </button>
+              </div>
+              <p className="text-[8.5px] text-slate-600 leading-snug text-justify">
+                Quadro quantitativo consolidado das não conformidades identificadas nas vistorias individuais de cada torre e área comum. A leitura analítica dos pontos críticos fundamenta as correções prioritárias obrigatórias perante as normas ABNT NBR 5419:2026 e ABNT NBR 5410.
+              </p>
+            </div>
+
+            {/* TABELA CONSOLIDADA DE NÃO CONFORMIDADES POR TORRE */}
+            <div className="border-2 border-slate-900 rounded overflow-hidden shadow-xs">
+              <table className="w-full text-left border-collapse text-[8.5px]">
+                <thead>
+                  <tr className="bg-slate-900 text-white text-[8.5px] font-bold uppercase tracking-wider">
+                    <th className="py-1.5 px-3 border-r border-slate-700">Torre / Bloco</th>
+                    <th className="py-1.5 px-2 text-center border-r border-slate-700">
+                      Pontos a Equipotencializar
+                    </th>
+                    <th className="py-1.5 px-2 text-center border-r border-slate-700">
+                      Quadros sem DPS (Instalar)
+                    </th>
+                    <th className="py-1.5 px-2 text-center border-r border-slate-700">
+                      Outras Adequações
+                    </th>
+                    <th className="py-1.5 px-2 text-center bg-slate-950 font-black">
+                      Total por Torre
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {nonComplianceSummary.rows.map((row, rIdx) => {
+                    const hasIssues = row.total > 0;
+                    return (
+                      <tr
+                        key={rIdx}
+                        className={
+                          rIdx % 2 === 0
+                            ? 'bg-white hover:bg-slate-50'
+                            : 'bg-slate-50/70 hover:bg-slate-100'
+                        }
+                      >
+                        <td className="py-1 px-3 font-bold text-slate-900 border-r border-slate-200">
+                          {row.towerName}
+                        </td>
+                        <td
+                          className={`py-1 px-2 text-center font-bold border-r border-slate-200 ${
+                            row.pointsNeedingEquipotentialization > 0
+                              ? 'text-amber-700 bg-amber-50/60 font-black'
+                              : 'text-slate-500 font-normal'
+                          }`}
+                        >
+                          {row.pointsNeedingEquipotentialization}
+                        </td>
+                        <td
+                          className={`py-1 px-2 text-center font-bold border-r border-slate-200 ${
+                            row.panelsNeedingDps > 0
+                              ? 'text-red-700 bg-red-50/60 font-black'
+                              : 'text-slate-500 font-normal'
+                          }`}
+                        >
+                          {row.panelsNeedingDps}
+                        </td>
+                        <td className="py-1 px-2 text-center text-slate-600 border-r border-slate-200">
+                          {row.otherNonCompliances}
+                        </td>
+                        <td
+                          className={`py-1 px-2 text-center font-black ${
+                            hasIssues ? 'text-red-800 bg-red-100/50' : 'text-emerald-700'
+                          }`}
+                        >
+                          {row.total}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-900 text-white font-black text-[9px] border-t-2 border-slate-950">
+                    <td className="py-2 px-3 uppercase tracking-wider">
+                      TOTAL GERAL DO CONDOMÍNIO
+                    </td>
+                    <td className="py-2 px-2 text-center font-black text-amber-300">
+                      {nonComplianceSummary.totalEquipotentialization}
+                    </td>
+                    <td className="py-2 px-2 text-center font-black text-red-300">
+                      {nonComplianceSummary.totalDpsMissing}
+                    </td>
+                    <td className="py-2 px-2 text-center font-bold text-slate-200">
+                      {nonComplianceSummary.totalOther}
+                    </td>
+                    <td className="py-2 px-2 text-center font-black text-amber-400 bg-black text-[9.5px]">
+                      {nonComplianceSummary.grandTotal}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* LISTA DETALHADA DE ITENS A CORRIGIR POR TORRE */}
+            <div className="space-y-1.5 pt-1">
+              <p className="text-[9.5px] font-bold text-slate-900 uppercase">
+                DETALHAMENTO DAS NÃO CONFORMIDADES IDENTIFICADAS POR TORRE:
+              </p>
+              {nonComplianceSummary.rows.some((r) => r.items.length > 0) ? (
+                <div className="grid grid-cols-2 gap-2 text-[8px]">
+                  {nonComplianceSummary.rows
+                    .filter((r) => r.items.length > 0)
+                    .map((r, idx) => (
+                      <div
+                        key={idx}
+                        className="border border-slate-200 bg-slate-50/80 rounded p-2 space-y-1"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-0.5">
+                          <span className="font-bold text-slate-900 uppercase">{r.towerName}</span>
+                          <span className="text-[7px] font-black px-1.5 py-0.2 rounded bg-red-100 text-red-700">
+                            {r.total} {r.total === 1 ? 'item' : 'itens'}
+                          </span>
+                        </div>
+                        <ul className="space-y-0.8 text-slate-700 leading-snug">
+                          {r.items.map((item, iIdx) => (
+                            <li key={iIdx} className="flex items-start gap-1">
+                              <span
+                                className={`text-[7px] font-bold px-1 rounded flex-shrink-0 ${
+                                  item.type === 'dps'
+                                    ? 'bg-red-200 text-red-900'
+                                    : item.type === 'equipotential'
+                                    ? 'bg-amber-200 text-amber-900'
+                                    : 'bg-slate-200 text-slate-800'
+                                }`}
+                              >
+                                {item.type === 'dps'
+                                  ? 'DPS'
+                                  : item.type === 'equipotential'
+                                  ? 'EQUIPOTENCIAL'
+                                  : 'OUTRO'}
+                              </span>
+                              <span className="break-words font-medium">{item.caption}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div className="border border-emerald-200 bg-emerald-50 rounded p-3 text-center text-emerald-800 text-[9px] font-bold">
+                  ✓ Nenhuma não conformidade crítica com falta de DPS ou equipotencialização foi apontada nas legendas das fotos desta vistoria.
+                </div>
+              )}
+            </div>
+
+            {/* Parecer de Ação Corretiva Imediata */}
+            <div className="bg-red-50 border border-red-200 rounded p-2 text-justify">
+              <p className="text-[8.5px] font-bold text-red-950 uppercase mb-0.5">
+                PARECER TÉCNICO SOBRE AS ADEQUAÇÕES APONTADAS:
+              </p>
+              <p className="text-[8px] text-red-900 leading-relaxed">
+                Todas as irregularidades listadas acima devem ser sanadas prioritariamente por equipe de engenharia e eletricistas qualificados. A falta de equipotencialização compromete o escoamento seguro de descargas elétricas e eleva riscos de centelhamentos perigosos (NBR 5419-3:2026), enquanto a ausência de DPS deixa os circuitos de baixa tensão e as edificações expostos a queimas catastróficas por sobretensões transitórias (NBR 5410).
+              </p>
+            </div>
+          </div>
+
+          <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
+        </div>
+      </ResponsivePage>
+
 
       {/* ========================================================
           PÁGINA FINAL UNIFICADA: 8) RECOMENDAÇÕES PRIORITÁRIAS,

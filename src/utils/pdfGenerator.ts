@@ -2,7 +2,14 @@ import jsPDF from 'jspdf';
 import { SpdaReport, PhotoSlot } from '../types/spda';
 import { SJC_OFFICIAL_LOGO_DATA_URL } from '../assets/logo';
 import { generateSequentialPdfFileName } from './storage';
-import { consolidateReportPhotos } from './towerSorter';
+import {
+  consolidateReportPhotos,
+  getTowerInspectionGroups,
+  analyzeTowerNonConformities,
+  isDpsMissingCaption,
+  isEquipotentialMissingCaption,
+  TowerInspectionGroup,
+} from './towerSorter';
 import { disposeCanvas } from './imageOptimizer';
 
 export interface GeneratePdfOptions {
@@ -49,6 +56,8 @@ export async function safeJpegDataUrl(url?: string, width = 540, height = 230, f
           ctx.fillRect(0, 0, width, height);
 
           // Contain fit to maintain aspect ratio without cropping anything
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           const imgRatio = img.width / img.height;
           const targetRatio = width / height;
           let dw = width;
@@ -67,7 +76,7 @@ export async function safeJpegDataUrl(url?: string, width = 540, height = 230, f
           }
 
           ctx.drawImage(img, 0, 0, img.width, img.height, dx, dy, dw, dh);
-          const out = canvas.toDataURL('image/jpeg', 0.95);
+          const out = canvas.toDataURL('image/jpeg', 0.96);
           disposeCanvas(canvas);
           img.src = '';
           resolve(out);
@@ -169,9 +178,11 @@ export async function loadUncroppedPhoto(url?: string): Promise<UncroppedPhotoDa
 
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
 
-        const safeDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        const safeDataUrl = canvas.toDataURL('image/jpeg', 0.96);
         disposeCanvas(canvas);
         img.src = '';
         resolve({
@@ -243,8 +254,8 @@ export function calculateContainedDimensions(
  */
 export async function processPhotoForPdf(
   photo: PhotoSlot,
-  targetWidth = 600, // 38.5mm (~400 DPI ultra-nítido, 40% menor consumo de RAM)
-  targetHeight = 750, // 48.0mm
+  targetWidth = 900, // 38.5mm (~600 DPI para impressão ultra-nítida e sem granulação)
+  targetHeight = 1125, // 48.0mm
   allowCircle = true
 ): Promise<string> {
   if (!photo?.url) return '';
@@ -278,6 +289,10 @@ export async function processPhotoForPdf(
         // Clean white background
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+        // Ativa suavização bicúbica de altíssima definição (elimina granulação em impressão)
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
 
         // Exact CSS object-cover mathematics (identical to UI preview and CircleFocusModal)
         const imgRatio = img.width / img.height;
@@ -335,7 +350,7 @@ export async function processPhotoForPdf(
           ctx.restore();
         }
 
-        const out = canvas.toDataURL('image/jpeg', 0.90);
+        const out = canvas.toDataURL('image/jpeg', 0.95);
         disposeCanvas(canvas);
         img.src = '';
         resolve(out);
@@ -425,7 +440,7 @@ export async function processHeaderLogo(
         const renderY = topY + (maxHeightMm - renderHeight) / 2;
 
         // Renderiza no canvas sem cortar absolutamente nada (proporção 1:1 integral)
-        const scale = Math.min(3, Math.max(1, 1200 / Math.max(origW, origH)));
+        const scale = Math.min(4, Math.max(2, 1600 / Math.max(origW, origH)));
         const canvasW = Math.round(origW * scale);
         const canvasH = Math.round(origH * scale);
 
@@ -438,7 +453,9 @@ export async function processHeaderLogo(
           return;
         }
 
-        // Desenha 100% da imagem original sem perder nenhum pixel e sem cortar nada
+        // Desenha 100% da imagem original com alta nitidez e sem granular na impressão
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, canvasW, canvasH);
 
         // Gera PNG para preservar qualidade e transparência original
@@ -584,6 +601,22 @@ export const generatePdfBlob = async (
   ]);
 
   activeHeaderLogo = headerLogoLayout;
+
+  const photoJpegMap = new Map<string, string>();
+  spdaPhotos.forEach((p, i) => {
+    const k = p.id || p.url;
+    if (k && spdaJpegs[i]) photoJpegMap.set(k, spdaJpegs[i]);
+  });
+  measurementPhotos.forEach((p, i) => {
+    const k = p.id || p.url;
+    if (k && measureJpegs[i]) photoJpegMap.set(k, measureJpegs[i]);
+  });
+  quadrosPhotos.forEach((p, i) => {
+    const k = p.id || p.url;
+    if (k && quadrosJpegs[i]) photoJpegMap.set(k, quadrosJpegs[i]);
+  });
+
+  const towerGroups = getTowerInspectionGroups(consolidatedReport);
 
   // ==========================================
   // PÁGINA 1: CAPA EXECUTIVA (SEM ESPAÇOS VAZIOS)
@@ -1196,479 +1229,9 @@ export const generatePdfBlob = async (
 
 
   // ==========================================================
-  // SEÇÃO 5: VISTORIA DO SPDA EXISTENTE
-  // REGRA FIXA: 4 FOTOS POR LINHA COM TAMANHO IMUTÁVEL (38.5mm x 48mm)
-  // Sem espaços vazios: Se não houver fotos, une o parecer técnico e a análise visual!
+  // SEÇÃO 5: INSTRUMENTAÇÃO TÉCNICA E PARÂMETROS NORMATIVOS (NBR 5419:2026 / NBR 5410)
   // ==========================================================
-  onProgress?.(60, 'Gerando Seção 5: Vistoria do SPDA Existente...');
-
-  const spdaChunks = chunkArray(spdaPhotos, 16);
-  const spdaJpegChunks = chunkArray(spdaJpegs, 16);
-
-  if (spdaPhotos.length === 0) {
-    // Caso limpo / sem fotos cadastradas: Apresenta análise técnica visual completa sem deixar página em branco!
-    pdf.addPage('a4', 'portrait');
-    drawWatermark(pdf);
-    drawHeaderLogo(pdf);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(11);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('5) VISTORIA DO SPDA EXISTENTE & PARECER VISUAL', marginX, 36);
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8.5);
-    pdf.setTextColor(30, 41, 59);
-    pdf.text(pdf.splitTextToSize(texts.vistoriaSpdaTexto, contentWidth), marginX, 43);
-
-    // Painel de Parecer Técnico Visual da Vistoria
-    pdf.setFillColor(248, 250, 252);
-    pdf.setDrawColor(203, 213, 225);
-    pdf.setLineWidth(0.4);
-    pdf.roundedRect(marginX, 55, contentWidth, 55, 1.5, 1.5, 'FD');
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', marginX + 5, 62);
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(51, 65, 85);
-    const analiseLines = pdf.splitTextToSize(texts.vistoriaSpdaAnalise, contentWidth - 10);
-    pdf.text(analiseLines, marginX + 5, 68);
-
-    // Tabela dos Subsistemas Vistoriados
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, 118, contentWidth, 7, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.5);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419:2026)', marginX + 4, 122.5);
-
-    const subsistemas = [
-      {
-        item: 'Subsistema de Captação',
-        desc: conditions.subCapitacaoDesc || 'Mastros, pontas captoras Franklin, fitas de alumínio e suportes de fixação.',
-        status: conditions.subCapitacaoStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME'),
-      },
-      {
-        item: 'Subsistema de Descida',
-        desc: conditions.subDescidaDesc || 'Fitas de descida, espaçamento normativo, curvas e fixações mecânicas.',
-        status: conditions.subDescidaStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME'),
-      },
-      {
-        item: 'Subsistema de Aterramento',
-        desc: conditions.subAterramentoDesc || 'Caixas de equalização e inspeção, anel perimetral de aterramento e hastes cobreadas.',
-        status: conditions.subAterramentoStatus || (conditions.caixasInspecaoLimpas ? 'CONFORME' : 'NÃO CONFORME'),
-      },
-      {
-        item: 'Equipotencialização Metálica',
-        desc: conditions.subEquipotencializacaoDesc || 'Interligação de massas metálicas da cobertura, rufos e estruturas de concreto armado.',
-        status: conditions.subEquipotencializacaoStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME'),
-      },
-    ];
-
-    let subY = 132;
-    subsistemas.forEach((sub, sIdx) => {
-      if (sIdx % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(marginX, subY - 4.5, contentWidth, 12, 'F');
-      }
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(sub.item, marginX + 3, subY);
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      if (sub.status === 'CONFORME') {
-        pdf.setTextColor(22, 101, 52);
-      } else if (sub.status === 'REQUER AJUSTES') {
-        pdf.setTextColor(180, 83, 9);
-      } else {
-        pdf.setTextColor(220, 38, 38);
-      }
-      pdf.text(sub.status, marginX + contentWidth - 4, subY, { align: 'right' });
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(71, 85, 105);
-      pdf.text(sub.desc, marginX + 3, subY + 5, { maxWidth: contentWidth - 6 });
-
-      pdf.setDrawColor(226, 232, 240);
-      pdf.setLineWidth(0.2);
-      pdf.line(marginX, subY + 7.5, marginX + contentWidth, subY + 7.5);
-
-      subY += 13;
-    });
-  } else {
-    // Existem fotos cadastradas: 4 por linha fixas
-    const spdaPageCount = spdaChunks.length;
-
-    for (let pageIdx = 0; pageIdx < spdaPageCount; pageIdx++) {
-      pdf.addPage('a4', 'portrait');
-      drawWatermark(pdf);
-      drawHeaderLogo(pdf);
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(
-        pageIdx === 0 ? '5) VISTORIA DO SPDA EXISTENTE' : '5) VISTORIA DO SPDA EXISTENTE (CONTINUAÇÃO)',
-        marginX,
-        36
-      );
-
-      let gridStartY = 44;
-      if (pageIdx === 0) {
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8);
-        pdf.setTextColor(30, 41, 59);
-        const vistoriaLines = pdf.splitTextToSize(texts.vistoriaSpdaTexto, contentWidth);
-        pdf.text(vistoriaLines, marginX, 42);
-        gridStartY = 42 + vistoriaLines.length * 4.2 + 3;
-      }
-
-      const currentPhotos = spdaChunks[pageIdx] || [];
-      const currentJpegs = spdaJpegChunks[pageIdx] || [];
-      const count = currentPhotos.length;
-
-      for (let i = 0; i < count; i++) {
-        const col = i % PHOTO_COLS;
-        const row = Math.floor(i / PHOTO_COLS);
-
-        const x = marginX + col * (PHOTO_WIDTH_MM + PHOTO_GAP_X_MM);
-        const y = gridStartY + row * (PHOTO_HEIGHT_MM + PHOTO_GAP_Y_MM);
-
-        if (currentJpegs[i]) {
-          pdf.addImage(currentJpegs[i], 'JPEG', x, y, PHOTO_WIDTH_MM, PHOTO_HEIGHT_MM);
-        }
-
-        // Legenda automática abaixo de cada foto com o nome da torre quando houver mais de uma torre
-        const tName = currentPhotos[i]?.towerName || 'Torre 1';
-        const cap = (currentPhotos[i]?.caption || '').trim();
-        const legendBelow = isMultiTower
-          ? (cap ? `${tName} - ${cap}` : tName)
-          : cap;
-
-        if (legendBelow) {
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(6.2);
-          pdf.setTextColor(15, 23, 42);
-          pdf.text(legendBelow, x + PHOTO_WIDTH_MM / 2, y + PHOTO_HEIGHT_MM + 3.2, {
-            align: 'center',
-            maxWidth: PHOTO_WIDTH_MM,
-          });
-        }
-      }
-
-    }
-  }
-
-  // ==========================================
-  // SEÇÃO 6: MEDIÇÕES DE CONTINUIDADE OHMICA & INSTRUMENTO
-  // ==========================================
-  onProgress?.(72, 'Gerando Seção 6: Medições de Continuidade Ôhmica...');
-  pdf.addPage('a4', 'portrait');
-  drawWatermark(pdf);
-  drawHeaderLogo(pdf);
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(11);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text('6) MEDIÇÕES DE CONTINUIDADE OHMICA DOS CONDUTORES', marginX, 36);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8);
-  pdf.setTextColor(30, 41, 59);
-  const medTextoLines = pdf.splitTextToSize(texts.medicoesContinuidadeTexto, contentWidth);
-  pdf.text(medTextoLines, marginX, 42);
-
-  let equipStartY = 42 + medTextoLines.length * 4.2 + 3;
-
-  // Caixa do Instrumento de Medição
-  pdf.setFillColor(248, 250, 252);
-  pdf.setDrawColor(203, 213, 225);
-  pdf.setLineWidth(0.4);
-  pdf.roundedRect(marginX, equipStartY, contentWidth, 54, 1.5, 1.5, 'FD');
-
-  if (equipmentPhotoInfo) {
-    // Foto do instrumento posicionada à esquerda mantendo proporção nativa sem corte, estritamente limitada
-    const boxW = 60;
-    const boxH = 46;
-    const { width: eqW, height: eqH } = calculateContainedDimensions(
-      equipmentPhotoInfo.aspect,
-      boxW,
-      boxH
-    );
-
-    const eqX = marginX + 4 + (boxW - eqW) / 2;
-    const eqY = equipStartY + 4 + (boxH - eqH) / 2;
-    pdf.addImage(equipmentPhotoInfo.dataUrl, equipmentPhotoInfo.format, eqX, eqY, eqW, eqH);
-
-    // Texto técnico ao lado da foto
-    const sideX = marginX + 68;
-    const sideW = contentWidth - 72;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.5);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(`Miliohmímetro ${texts.equipamentoModelo} - ${texts.equipamentoMarca}`, sideX, equipStartY + 9, { maxWidth: sideW });
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(51, 65, 85);
-    pdf.text(pdf.splitTextToSize(texts.equipamentoDescricao, sideW), sideX, equipStartY + 15);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(`Local: ${texts.medicoesLocal}`, sideX, equipStartY + 38, { maxWidth: sideW });
-    pdf.text(`Corrente de Ensaio: ${texts.medicoesCorrenteAplicada}`, sideX, equipStartY + 43, { maxWidth: sideW });
-    pdf.text(`Tipo de Corrente: ${texts.medicoesTipoCorrente}`, sideX, equipStartY + 48, { maxWidth: sideW });
-  } else {
-    // Sem foto: Especificação técnica completa
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(`Instrumento: Miliohmímetro Portátil ${texts.equipamentoModelo} - ${texts.equipamentoMarca}`, marginX + 6, equipStartY + 8, { maxWidth: contentWidth - 12 });
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(51, 65, 85);
-    pdf.text(pdf.splitTextToSize(texts.equipamentoDescricao, contentWidth - 12), marginX + 6, equipStartY + 15);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(`Local de Medição: ${texts.medicoesLocal}`, marginX + 6, equipStartY + 36, { maxWidth: contentWidth - 12 });
-    pdf.text(`Corrente Aplicada: ${texts.medicoesCorrenteAplicada}`, marginX + 6, equipStartY + 42, { maxWidth: contentWidth - 12 });
-    pdf.text(`Tipo de Corrente: ${texts.medicoesTipoCorrente}`, marginX + 6, equipStartY + 48, { maxWidth: contentWidth - 12 });
-  }
-
-  // Tabela de Parâmetros e Critérios Normativos de Continuidade
-  let tableY = equipStartY + 58;
-
-  pdf.setFillColor(241, 245, 249);
-  pdf.rect(marginX, tableY, contentWidth, 7, 'F');
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8.5);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)', marginX + 4, tableY + 4.8);
-
-  tableY += 7;
-
-  const criterios = [
-    {
-      criterio: 'Continuidade de Armaduras e Malhas',
-      norma: 'NBR 5419-3:2026 (Item 5.3.5)',
-      limite: '≤ 0,200 Ω (200 mΩ)',
-      status: conditions.continuidadeAprovada ? 'CONFORME' : 'ATENÇÃO',
-    },
-    {
-      criterio: 'Resistência de Equipotencialização',
-      norma: 'NBR 5419-3:2026 (Item 6.2)',
-      limite: '≤ 0,200 Ω (200 mΩ)',
-      status: 'CONFORME',
-    },
-    {
-      criterio: 'Método de 4 Terminais (Kelvin)',
-      norma: 'Injeção de corrente DC contínua',
-      limite: 'Min. 1,0 A sob 4 fios',
-      status: 'APLICADO',
-    },
-    {
-      criterio: 'Estado Físico das Caixas de Inspeção',
-      norma: 'Aterramento & Equalização',
-      limite: 'Desobstruídas e secas',
-      status: conditions.caixasInspecaoLimpas ? 'CONFORME' : 'LIMPEZA PENDENTE',
-    },
-  ];
-
-  criterios.forEach((crit, cIdx) => {
-    if (cIdx % 2 === 0) {
-      pdf.setFillColor(250, 250, 250);
-      pdf.rect(marginX, tableY, contentWidth, 6.5, 'F');
-    }
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.0);
-    pdf.setTextColor(30, 41, 59);
-    pdf.text(crit.criterio, marginX + 3, tableY + 4.5, { maxWidth: 58 });
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(6.8);
-    pdf.setTextColor(71, 85, 105);
-    pdf.text(crit.norma, marginX + 63, tableY + 4.5, { maxWidth: 42 });
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(6.8);
-    pdf.setTextColor(30, 41, 59);
-    pdf.text(crit.limite, marginX + 107, tableY + 4.5, { maxWidth: 32 });
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(6.8);
-    if (crit.status === 'CONFORME' || crit.status === 'APLICADO') {
-      pdf.setTextColor(22, 101, 52);
-    } else {
-      pdf.setTextColor(220, 38, 38);
-    }
-    pdf.text(crit.status, marginX + contentWidth - 3, tableY + 4.5, { align: 'right' });
-
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setLineWidth(0.2);
-    pdf.line(marginX, tableY + 6.5, marginX + contentWidth, tableY + 6.5);
-
-    tableY += 6.5;
-  });
-
-  // ==========================================================
-  // PONTOS DE MEDIÇÃO OBTIDOS (FOTOS DIRETAS OU TABELA DE METODOLOGIA)
-  // ACOMODA ATÉ 8 FOTOS DIRETO NESTA PÁGINA PARA ELIMINAR ESPAÇOS VAZIOS!
-  // ==========================================================
-  const measurePage1 = measurementPhotos.slice(0, 8);
-  const measureJpegsPage1 = measureJpegs.slice(0, 8);
-  const measureRestantes = measurementPhotos.slice(8);
-  const measureJpegsRestantes = measureJpegs.slice(8);
-  const measureContChunks = chunkArray(measureRestantes, 16);
-  const measureContJpegChunks = chunkArray(measureJpegsRestantes, 16);
-
-  let curMeasureY = tableY + 4;
-
-  if (measurePage1.length > 0) {
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.0);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('6.1) PONTOS DE MEDIÇÃO DE CONTINUIDADE OBTIDOS', marginX, curMeasureY + 4);
-    curMeasureY += 6;
-
-    const MEASURE_IMG_H = 38.0;
-    for (let i = 0; i < measurePage1.length; i++) {
-      const col = i % PHOTO_COLS;
-      const row = Math.floor(i / PHOTO_COLS);
-      const x = marginX + col * (PHOTO_WIDTH_MM + PHOTO_GAP_X_MM);
-      const y = curMeasureY + row * (MEASURE_IMG_H + 9);
-
-      if (measureJpegsPage1[i]) {
-        pdf.addImage(measureJpegsPage1[i], 'JPEG', x, y, PHOTO_WIDTH_MM, MEASURE_IMG_H);
-      }
-
-      const tName = measurePage1[i]?.towerName || 'Torre 1';
-      const towerName = isMultiTower ? tName : (measurePage1[i]?.towerName ? `[${measurePage1[i].towerName}]` : '');
-      const cap = (measurePage1[i]?.caption || '').trim();
-      const val = (measurePage1[i]?.measurementValue || '').trim();
-      const title = towerName ? (cap ? `${towerName} - ${cap}` : towerName) : cap;
-      const textBelow = [title, val ? `(${val})` : ''].filter(Boolean).join(' ');
-
-      if (textBelow) {
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(0, 0, 0);
-        pdf.text(textBelow, x + PHOTO_WIDTH_MM / 2, y + MEASURE_IMG_H + 3.5, {
-          align: 'center',
-          maxWidth: PHOTO_WIDTH_MM,
-        });
-      }
-    }
-  } else {
-    // Se não houver fotos de medição, tabela técnica de metodologia de 4 fios
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, curMeasureY, contentWidth, 5.5, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('METODOLOGIA DE 4 TERMINAIS (KELVIN) E PONTOS DE ENSAIO', marginX + 4, curMeasureY + 4.0);
-
-    const pontosMetodologia = [
-      { ponto: '1. Malha de Captação para Descidas Principais', obs: 'Ensaio a 4 fios com injeção DC contínua [CONFORME]' },
-      { ponto: '2. Descidas para Caixas de Equalização / BEP', obs: 'Conexões mecânicas ensaiadas sob carga [CONFORME]' },
-      { ponto: '3. Malha de Aterramento para Estruturas Metálicas', obs: 'Equipotencialização de massas da edificação [CONFORME]' },
-    ];
-
-    let pY = curMeasureY + 5.5;
-    pontosMetodologia.forEach((p, pIdx) => {
-      if (pIdx % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(marginX, pY, contentWidth, 5.5, 'F');
-      }
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.0);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text(p.ponto, marginX + 3, pY + 4.0, { maxWidth: 85 });
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(6.8);
-      pdf.setTextColor(22, 101, 52);
-      pdf.text(p.obs, marginX + contentWidth - 3, pY + 4.0, { align: 'right' });
-
-      pdf.setDrawColor(226, 232, 240);
-      pdf.setLineWidth(0.2);
-      pdf.line(marginX, pY + 5.5, marginX + contentWidth, pY + 5.5);
-      pY += 5.5;
-    });
-  }
-
-  // Páginas de continuação de medições (se houver mais de 8 fotos)
-  for (let cIdx = 0; cIdx < measureContChunks.length; cIdx++) {
-    pdf.addPage('a4', 'portrait');
-    drawWatermark(pdf);
-    drawHeaderLogo(pdf);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10.5);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('6.1) PONTOS DE MEDIÇÃO (CONTINUAÇÃO)', marginX, 36);
-
-    const curChunk = measureContChunks[cIdx];
-    const curJpegs = measureContJpegChunks[cIdx];
-    const MEASURE_IMG_H = 40.0;
-    const startY = 44;
-
-    for (let i = 0; i < curChunk.length; i++) {
-      const col = i % PHOTO_COLS;
-      const row = Math.floor(i / PHOTO_COLS);
-      const x = marginX + col * (PHOTO_WIDTH_MM + PHOTO_GAP_X_MM);
-      const y = startY + row * (MEASURE_IMG_H + 9);
-
-      if (curJpegs[i]) {
-        pdf.addImage(curJpegs[i], 'JPEG', x, y, PHOTO_WIDTH_MM, MEASURE_IMG_H);
-      }
-
-      const tName = curChunk[i]?.towerName || 'Torre 1';
-      const towerName = isMultiTower ? tName : (curChunk[i]?.towerName ? `[${curChunk[i].towerName}]` : '');
-      const cap = (curChunk[i]?.caption || '').trim();
-      const val = (curChunk[i]?.measurementValue || '').trim();
-      const title = towerName ? (cap ? `${towerName} - ${cap}` : towerName) : cap;
-      const textBelow = [title, val ? `(${val})` : ''].filter(Boolean).join(' ');
-
-      if (textBelow) {
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(0, 0, 0);
-        pdf.text(textBelow, x + PHOTO_WIDTH_MM / 2, y + MEASURE_IMG_H + 3.5, {
-          align: 'center',
-          maxWidth: PHOTO_WIDTH_MM,
-        });
-      }
-    }
-  }
-
-  // ==========================================
-  // SEÇÃO 7: ANÁLISE DOS QUADROS DE ENERGIA & DPS (NBR 5410)
-  // DENSO: ACOMODA ATÉ 8 FOTOS OU TABELA DE AUDITORIA DE QUADROS!
-  // ==========================================
-  onProgress?.(84, 'Gerando Seção 7: Análise dos Quadros & DPS...');
-
-  const QUADROS_PAGE1_CAPACITY = 16;
-  const quadrosPage1 = quadrosPhotos.slice(0, QUADROS_PAGE1_CAPACITY);
-  const quadrosJpegsPage1 = quadrosJpegs.slice(0, QUADROS_PAGE1_CAPACITY);
-  const quadrosRestantes = quadrosPhotos.slice(QUADROS_PAGE1_CAPACITY);
-  const quadrosJpegsRestantes = quadrosJpegs.slice(QUADROS_PAGE1_CAPACITY);
-  const quadrosContChunks = chunkArray(quadrosRestantes, 16);
-  const quadrosContJpegChunks = chunkArray(quadrosJpegsRestantes, 16);
-
+  onProgress?.(55, 'Gerando Seção 5: Instrumentação e Critérios Normativos...');
   pdf.addPage('a4', 'portrait');
   drawWatermark(pdf);
   drawHeaderLogo(pdf);
@@ -1676,125 +1239,572 @@ export const generatePdfBlob = async (
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(10.5);
   pdf.setTextColor(15, 23, 42);
-  pdf.text('7) ANÁLISE DOS QUADROS DE ENERGIA & PROTEÇÃO CONTRA SURTOS (DPS)', marginX, 36);
+  pdf.text('5) INSTRUMENTAÇÃO TÉCNICA E CRITÉRIOS DE INSPEÇÃO', marginX, 36);
 
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.8);
+  pdf.setFontSize(7.5);
   pdf.setTextColor(30, 41, 59);
-  const ptoInspLines = pdf.splitTextToSize(texts.pontosInspecaoAvaliacao, contentWidth);
-  pdf.text(ptoInspLines, marginX, 41);
+  const medContLines = pdf.splitTextToSize(texts.medicoesContinuidadeTexto, contentWidth);
+  pdf.text(medContLines, marginX, 41);
 
-  let quadY = 41 + ptoInspLines.length * 3.8 + 2;
+  let instY = 41 + medContLines.length * 3.6 + 2;
 
-  // Faixa cinza NBR 5410
-  pdf.setFillColor(229, 231, 235);
-  pdf.rect(marginX, quadY, contentWidth, 5.5, 'F');
+  // Painel com Foto do Miliohmímetro e Especificações Técnicas
+  pdf.setFillColor(248, 250, 252);
+  pdf.setDrawColor(203, 213, 225);
+  pdf.setLineWidth(0.3);
+  pdf.roundedRect(marginX, instY, contentWidth, 38, 1, 1, 'FD');
+
+  if (equipmentPhotoInfo?.dataUrl) {
+    try {
+      const { width: eqW, height: eqH } = calculateContainedDimensions(
+        equipmentPhotoInfo.aspect,
+        45,
+        34
+      );
+      const eqX = marginX + 3 + (45 - eqW) / 2;
+      const eqY = instY + 2 + (34 - eqH) / 2;
+      pdf.addImage(equipmentPhotoInfo.dataUrl, equipmentPhotoInfo.format, eqX, eqY, eqW, eqH);
+    } catch (e) {
+      console.warn('Erro ao inserir foto do miliohmímetro no PDF:', e);
+    }
+  }
+
+  const eqTextX = equipmentPhotoInfo?.dataUrl ? marginX + 52 : marginX + 5;
+  const eqTextW = equipmentPhotoInfo?.dataUrl ? contentWidth - 55 : contentWidth - 10;
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(8.2);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text(
+    `Miliohmímetro ${texts.equipamentoModelo} - Marca: ${texts.equipamentoMarca}`,
+    eqTextX,
+    instY + 6.5
+  );
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(7.0);
+  pdf.setTextColor(71, 85, 105);
+  const eqDescLines = pdf.splitTextToSize(texts.equipamentoDescricao, eqTextW);
+  pdf.text(eqDescLines, eqTextX, instY + 11);
+
+  let eqDetY = instY + 11 + eqDescLines.length * 3.4 + 2;
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.0);
+  pdf.setTextColor(30, 41, 59);
+  pdf.text(`Local de Aplicação: `, eqTextX, eqDetY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(texts.medicoesLocal || 'Estruturas prediais e barramentos', eqTextX + 27, eqDetY);
+
+  eqDetY += 4.0;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(`Corrente Injetada: `, eqTextX, eqDetY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(texts.medicoesCorrenteAplicada || '10 A DC contínua', eqTextX + 25, eqDetY);
+
+  eqDetY += 4.0;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(`Tipo de Ensaio: `, eqTextX, eqDetY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(texts.medicoesTipoCorrente || 'Método de 4 Terminais (Kelvin)', eqTextX + 21, eqDetY);
+
+  instY += 41;
+
+  // Tabela de Parâmetros Normativos NBR 5419:2026
+  pdf.setFillColor(241, 245, 249);
+  pdf.rect(marginX, instY, contentWidth, 5.5, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)', marginX + 4, instY + 4.0);
+
+  const criteriosNormativos = [
+    { item: 'Continuidade de Armaduras e Malhas', norma: 'NBR 5419-3:2026 (Item 5.3.5)', limite: '≤ 0,200 Ω (200 mΩ)', status: 'CONFORME' },
+    { item: 'Resistência de Equipotencialização', norma: 'NBR 5419-3:2026 (Item 6.2)', limite: '≤ 0,200 Ω (200 mΩ)', status: 'CONFORME' },
+    { item: 'Método de 4 Terminais (Kelvin)', norma: 'Injeção de corrente contínua DC', limite: 'Elimina resist. pontas', status: 'APLICADO' },
+    { item: 'Estado das Caixas de Inspeção', norma: 'Aterramento & Equalização BEP', limite: 'Limpas e desobstruídas', status: conditions.caixasInspecaoLimpas ? 'CONFORME' : 'LIMPEZA PENDENTE' },
+  ];
+
+  let critNormY = instY + 5.5;
+  criteriosNormativos.forEach((crit, cIdx) => {
+    if (cIdx % 2 === 0) {
+      pdf.setFillColor(250, 250, 250);
+      pdf.rect(marginX, critNormY, contentWidth, 5.2, 'F');
+    }
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.8);
+    pdf.setTextColor(30, 41, 59);
+    pdf.text(crit.item, marginX + 3, critNormY + 3.8);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.8);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(crit.norma, marginX + 63, critNormY + 3.8);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(crit.limite, marginX + 112, critNormY + 3.8);
+
+    pdf.setFont('helvetica', 'bold');
+    if (crit.status === 'CONFORME' || crit.status === 'APLICADO') {
+      pdf.setTextColor(22, 101, 52);
+    } else {
+      pdf.setTextColor(217, 119, 6);
+    }
+    pdf.text(crit.status, marginX + contentWidth - 3, critNormY + 3.8, { align: 'right' });
+
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setLineWidth(0.2);
+    pdf.line(marginX, critNormY + 5.2, marginX + contentWidth, critNormY + 5.2);
+    critNormY += 5.2;
+  });
+
+  instY = critNormY + 3.5;
+
+  // Painel de Parecer Técnico Visual da Vistoria
+  pdf.setFillColor(248, 250, 252);
+  pdf.setDrawColor(203, 213, 225);
+  pdf.setLineWidth(0.3);
+  pdf.roundedRect(marginX, instY, contentWidth, 22, 1, 1, 'FD');
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', marginX + 4, instY + 4.5);
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(6.8);
+  pdf.setTextColor(51, 65, 85);
+  const analiseLines = pdf.splitTextToSize(texts.vistoriaSpdaAnalise, contentWidth - 8);
+  pdf.text(analiseLines, marginX + 4, instY + 8.5);
+
+  instY += 25.5;
+
+  // Tabela dos Subsistemas Vistoriados
+  pdf.setFillColor(241, 245, 249);
+  pdf.rect(marginX, instY, contentWidth, 5.5, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419:2026)', marginX + 4, instY + 4.0);
+
+  const subsistemas = [
+    { item: 'Subsistema de Captação', desc: conditions.subCapitacaoDesc || 'Mastros, pontas captoras Franklin e fitas condutoras.', status: conditions.subCapitacaoStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME') },
+    { item: 'Subsistema de Descida', desc: conditions.subDescidaDesc || 'Fitas de descida, curvas normativas e fixações mecânicas.', status: conditions.subDescidaStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME') },
+    { item: 'Subsistema de Aterramento', desc: conditions.subAterramentoDesc || 'Caixas de equalização, anel perimetral e hastes cobreadas.', status: conditions.subAterramentoStatus || (conditions.caixasInspecaoLimpas ? 'CONFORME' : 'NÃO CONFORME') },
+    { item: 'Equipotencialização Metálica', desc: conditions.subEquipotencializacaoDesc || 'Interligação de massas metálicas da cobertura e rufos.', status: conditions.subEquipotencializacaoStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME') },
+  ];
+
+  let subY = instY + 5.5;
+  subsistemas.forEach((sub, sIdx) => {
+    if (sIdx % 2 === 0) {
+      pdf.setFillColor(250, 250, 250);
+      pdf.rect(marginX, subY, contentWidth, 5.2, 'F');
+    }
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.8);
+    pdf.setTextColor(30, 41, 59);
+    pdf.text(sub.item, marginX + 3, subY + 3.8);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(sub.desc, marginX + 50, subY + 3.8, { maxWidth: contentWidth - 85 });
+
+    pdf.setFont('helvetica', 'bold');
+    if (sub.status === 'CONFORME') {
+      pdf.setTextColor(22, 101, 52);
+    } else if (sub.status === 'REQUER AJUSTES') {
+      pdf.setTextColor(217, 119, 6);
+    } else {
+      pdf.setTextColor(220, 38, 38);
+    }
+    pdf.text(sub.status, marginX + contentWidth - 3, subY + 3.8, { align: 'right' });
+
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setLineWidth(0.2);
+    pdf.line(marginX, subY + 5.2, marginX + contentWidth, subY + 5.2);
+    subY += 5.2;
+  });
+
+  instY = subY + 3.5;
+
+  // Diretriz NBR 5410 de DPS
+  pdf.setFillColor(254, 243, 199);
+  pdf.setDrawColor(245, 158, 11);
+  pdf.setLineWidth(0.3);
+  pdf.roundedRect(marginX, instY, contentWidth, 14, 1, 1, 'FD');
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.0);
+  pdf.setTextColor(146, 64, 14);
+  pdf.text('PROTEÇÃO CONTRA SURTOS EM QUADROS ELÉTRICOS (ABNT NBR 5410 / NBR 5419-4):', marginX + 4, instY + 4.2);
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(6.4);
+  pdf.setTextColor(180, 83, 9);
+  const dpsText = 'Todos os quadros de distribuição (QGBTs, parciais e de comando) devem possuir Dispositivos de Proteção contra Surtos (DPS) coordenados tipo 1 e tipo 2 em pleno funcionamento. A ausência de DPS deixa circuitos e edificações vulneráveis a danos catastróficos.';
+  pdf.text(pdf.splitTextToSize(dpsText, contentWidth - 8), marginX + 4, instY + 7.8);
+
+  // ==========================================
+  // SEÇÃO 6: VISTORIA E ENSAIOS TÉCNICOS POR TORRE
+  // FORMATO POR TORRE ("VÁRIOS LAUDOS DENTRO DE UM LAUDO GERAL"):
+  // Para cada torre / bloco:
+  //   1) Pontos de Inspeção (Continuidade Elétrica com Miliohmímetro)
+  //   2) Vistoria do SPDA Existente & Captores
+  //   3) Análise dos Quadros de Energia e DPS (NBR 5410)
+  // ==========================================
+  onProgress?.(68, 'Gerando Vistorias Técnicas por Torre...');
+
+  const PHOTO_IMG_H = 46.0;
+  const CELL_H = 57.0;
+
+  towerGroups.forEach((group, gIdx) => {
+    const totalPhotos = group.totalPhotos;
+    // Se a torre tiver fotos ou for a única torre, gera página dedicada
+    if (totalPhotos === 0 && towerGroups.length > 1) {
+      return;
+    }
+
+    onProgress?.(
+      68 + Math.round(((gIdx + 1) / towerGroups.length) * 18),
+      `Gerando Vistoria: ${group.towerName}...`
+    );
+
+    let curTowerY = 36;
+
+    const startTowerPage = (isContinuation = false, catName = '') => {
+      pdf.addPage('a4', 'portrait');
+      drawWatermark(pdf);
+      drawHeaderLogo(pdf);
+
+      pdf.setFillColor(15, 23, 42); // Azul escuro executivo
+      pdf.roundedRect(marginX, 36, contentWidth, 8, 1, 1, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9.0);
+      pdf.setTextColor(255, 255, 255);
+      const titleStr = isContinuation
+        ? `6.${gIdx + 1}) VISTORIA TÉCNICA: ${group.towerName.toUpperCase()} — ${catName} (CONTINUAÇÃO)`
+        : `6.${gIdx + 1}) VISTORIA & ENSAIOS TÉCNICOS: ${group.towerName.toUpperCase()}`;
+      pdf.text(titleStr, marginX + 4, 41.2);
+
+      curTowerY = 47;
+    };
+
+    startTowerPage(false);
+
+    // 3 subseções canônicas por torre
+    const subsections: Array<{
+      num: string;
+      title: string;
+      photos: PhotoSlot[];
+      isMeasure: boolean;
+    }> = [
+      {
+        num: `6.${gIdx + 1}.1`,
+        title: 'PONTOS DE INSPEÇÃO & ENSAIOS DE CONTINUIDADE ÔHMICA (MILIOHMÍMETRO)',
+        photos: group.measurementPhotos,
+        isMeasure: true,
+      },
+      {
+        num: `6.${gIdx + 1}.2`,
+        title: 'VISTORIA DO SPDA EXISTENTE, CAPTORES & DESCIDAS',
+        photos: group.spdaPhotos,
+        isMeasure: false,
+      },
+      {
+        num: `6.${gIdx + 1}.3`,
+        title: 'ANÁLISE DOS QUADROS DE ENERGIA & DPS (ABNT NBR 5410)',
+        photos: group.quadrosPhotos,
+        isMeasure: false,
+      },
+    ];
+
+    subsections.forEach((sub) => {
+      // Se não couber o cabeçalho e pelo menos 1 linha de foto, quebra a página
+      if (curTowerY + 22 > 272) {
+        startTowerPage(true, sub.title);
+      }
+
+      // Faixa da subseção
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(marginX, curTowerY, contentWidth, 6, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.6);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(`${sub.num}) ${sub.title}`, marginX + 3, curTowerY + 4.2);
+      curTowerY += 8;
+
+      if (sub.photos.length === 0) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(7.0);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text('Nenhum registro fotográfico nesta seção para esta torre.', marginX + 3, curTowerY + 2);
+        curTowerY += 7;
+        return;
+      }
+
+      // Renderizar fotos em linhas de 4 colunas
+      const photoChunks = chunkArray(sub.photos, PHOTO_COLS);
+      photoChunks.forEach((chunk) => {
+        if (curTowerY + CELL_H > 275) {
+          startTowerPage(true, sub.title);
+        }
+
+        chunk.forEach((p, cIdx) => {
+          const x = marginX + cIdx * (PHOTO_WIDTH_MM + PHOTO_GAP_X_MM);
+          const y = curTowerY;
+          const imgData = photoJpegMap.get(p.id || p.url) || p.url;
+
+          if (imgData) {
+            pdf.addImage(imgData, 'JPEG', x, y, PHOTO_WIDTH_MM, PHOTO_IMG_H);
+          }
+
+          // Moldura sutil
+          pdf.setDrawColor(226, 232, 240);
+          pdf.setLineWidth(0.2);
+          pdf.rect(x, y, PHOTO_WIDTH_MM, PHOTO_IMG_H);
+
+          // Legenda e identificador de não-conformidade
+          const cap = (p.caption || '').trim();
+          const val = (p.measurementValue || '').trim();
+          const capLower = cap.toLowerCase();
+
+          const isFaltaDps = /falta\s*dps|sem\s*dps|instalar\s*dps|aus[eê]ncia\s*de\s*dps/i.test(capLower);
+          const isFaltaEquipot = /falta\s*equipot|n[aã]o\s*equipot|equipotencializar|precisa\s*equipot/i.test(capLower);
+
+          let labelY = y + PHOTO_IMG_H + 2.8;
+
+          if (isFaltaDps) {
+            pdf.setFillColor(254, 226, 226);
+            pdf.roundedRect(x + 1, labelY - 2.0, PHOTO_WIDTH_MM - 2, 3.2, 0.4, 0.4, 'F');
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(5.5);
+            pdf.setTextColor(185, 28, 28);
+            pdf.text('⚠ FALTA DPS', x + PHOTO_WIDTH_MM / 2, labelY + 0.3, { align: 'center' });
+            labelY += 3.6;
+          } else if (isFaltaEquipot) {
+            pdf.setFillColor(254, 243, 199);
+            pdf.roundedRect(x + 1, labelY - 2.0, PHOTO_WIDTH_MM - 2, 3.2, 0.4, 0.4, 'F');
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(5.5);
+            pdf.setTextColor(180, 83, 9);
+            pdf.text('⚠ FALTA EQUIPOTENCIALIZAR', x + PHOTO_WIDTH_MM / 2, labelY + 0.3, { align: 'center' });
+            labelY += 3.6;
+          }
+
+          // Texto descritivo
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(6.2);
+          pdf.setTextColor(15, 23, 42);
+          const fullDesc = [cap || 'Registro de inspeção', val ? `(${val})` : ''].filter(Boolean).join(' ');
+          const splitLines = pdf.splitTextToSize(fullDesc, PHOTO_WIDTH_MM);
+          pdf.text(splitLines.slice(0, 2), x + PHOTO_WIDTH_MM / 2, labelY, {
+            align: 'center',
+            maxWidth: PHOTO_WIDTH_MM,
+          });
+        });
+
+        curTowerY += CELL_H + 2;
+      });
+
+      curTowerY += 2;
+    });
+  });
+
+  // ==========================================================
+  // PÁGINA EXECUTIVA: QUADRO RESUMO DE ADEQUAÇÕES POR TORRE
+  // CONTABILIZAÇÃO AUTOMÁTICA DE NÃO CONFORMIDADES:
+  // - Pontos a equipotencializar
+  // - Quadros que precisam de DPS
+  // - Outras não conformidades
+  // - Totais por torre e TOTAL GERAL DO CONDOMÍNIO
+  // ==========================================================
+  onProgress?.(88, 'Gerando Quadro Resumo de Não Conformidades por Torre...');
+  pdf.addPage('a4', 'portrait');
+  drawWatermark(pdf);
+  drawHeaderLogo(pdf);
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(10.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('7) QUADRO RESUMO DE ADEQUAÇÕES POR TORRE (NÃO CONFORMIDADES NBR 5419:2026)', marginX, 36);
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(7.2);
+  pdf.setTextColor(71, 85, 105);
+  const resumoIntro = 'Quadro quantitativo consolidado das não conformidades identificadas nas vistorias de cada torre. A leitura analítica dos pontos críticos fundamenta as correções prioritárias obrigatórias perante as normas ABNT NBR 5419:2026 e ABNT NBR 5410.';
+  pdf.text(pdf.splitTextToSize(resumoIntro, contentWidth), marginX, 41.5);
+
+  const nonComplianceSummary = analyzeTowerNonConformities(consolidatedReport);
+  let tblY = 49;
+
+  // Cabeçalho da Tabela
+  pdf.setFillColor(15, 23, 42);
+  pdf.rect(marginX, tblY, contentWidth, 7, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.0);
+  pdf.setTextColor(255, 255, 255);
+  pdf.text('TORRE / BLOCO', marginX + 3, tblY + 4.8);
+  pdf.text('PONTOS A EQUIPOTENCIALIZAR', marginX + 60, tblY + 4.8, { align: 'center' });
+  pdf.text('QUADROS SEM DPS (INSTALAR)', marginX + 105, tblY + 4.8, { align: 'center' });
+  pdf.text('OUTRAS ADEQUAÇÕES', marginX + 138, tblY + 4.8, { align: 'center' });
+  pdf.text('TOTAL POR TORRE', marginX + contentWidth - 3, tblY + 4.8, { align: 'right' });
+
+  tblY += 7;
+
+  // Linhas por Torre
+  nonComplianceSummary.rows.forEach((row, rIdx) => {
+    if (rIdx % 2 === 0) {
+      pdf.setFillColor(255, 255, 255);
+    } else {
+      pdf.setFillColor(248, 250, 252);
+    }
+    pdf.rect(marginX, tblY, contentWidth, 6.0, 'F');
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.2);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(row.towerName, marginX + 3, tblY + 4.2);
+
+    // Pontos a equipotencializar
+    if (row.pointsNeedingEquipotentialization > 0) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(180, 83, 9);
+      pdf.setFillColor(254, 243, 199);
+      pdf.roundedRect(marginX + 53, tblY + 1.2, 14, 3.8, 0.5, 0.5, 'F');
+    } else {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 116, 139);
+    }
+    pdf.text(String(row.pointsNeedingEquipotentialization), marginX + 60, tblY + 4.2, { align: 'center' });
+
+    // Quadros sem DPS
+    if (row.panelsNeedingDps > 0) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(185, 28, 28);
+      pdf.setFillColor(254, 226, 226);
+      pdf.roundedRect(marginX + 98, tblY + 1.2, 14, 3.8, 0.5, 0.5, 'F');
+    } else {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 116, 139);
+    }
+    pdf.text(String(row.panelsNeedingDps), marginX + 105, tblY + 4.2, { align: 'center' });
+
+    // Outras adequações
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(String(row.otherNonCompliances), marginX + 138, tblY + 4.2, { align: 'center' });
+
+    // Total por torre
+    pdf.setFont('helvetica', 'bold');
+    if (row.total > 0) {
+      pdf.setTextColor(185, 28, 28);
+    } else {
+      pdf.setTextColor(22, 101, 52);
+    }
+    pdf.text(String(row.total), marginX + contentWidth - 4, tblY + 4.2, { align: 'right' });
+
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setLineWidth(0.2);
+    pdf.line(marginX, tblY + 6.0, marginX + contentWidth, tblY + 6.0);
+    tblY += 6.0;
+  });
+
+  // Linha de Rodapé: TOTAL GERAL DO CONDOMÍNIO
+  pdf.setFillColor(15, 23, 42);
+  pdf.rect(marginX, tblY, contentWidth, 7.5, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(255, 255, 255);
+  pdf.text('TOTAL GERAL DO CONDOMÍNIO', marginX + 3, tblY + 5.0);
+
+  pdf.setTextColor(252, 211, 77); // Amarelo
+  pdf.text(String(nonComplianceSummary.totalEquipotentialization), marginX + 60, tblY + 5.0, { align: 'center' });
+
+  pdf.setTextColor(252, 165, 165); // Vermelho
+  pdf.text(String(nonComplianceSummary.totalDpsMissing), marginX + 105, tblY + 5.0, { align: 'center' });
+
+  pdf.setTextColor(226, 232, 240);
+  pdf.text(String(nonComplianceSummary.totalOther), marginX + 138, tblY + 5.0, { align: 'center' });
+
+  pdf.setFontSize(8.2);
+  pdf.setTextColor(255, 255, 255);
+  pdf.text(String(nonComplianceSummary.grandTotal), marginX + contentWidth - 4, tblY + 5.0, { align: 'right' });
+
+  tblY += 12;
+
+  // Detalhamento das Não Conformidades por Torre
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(7.8);
   pdf.setTextColor(15, 23, 42);
-  pdf.text('Avaliação dos Dispositivos de Proteção contra Surtos (DPS) - NBR 5410', 105, quadY + 4.0, { align: 'center' });
+  pdf.text('DETALHAMENTO DAS NÃO CONFORMIDADES IDENTIFICADAS POR TORRE:', marginX, tblY);
+  tblY += 4.5;
 
-  quadY += 8.5;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(51, 65, 85);
-  const analiseQdrLines = pdf.splitTextToSize(texts.analiseQuadrosTexto, contentWidth);
-  pdf.text(analiseQdrLines, marginX, quadY);
-  quadY += analiseQdrLines.length * 3.6 + 2.5;
+  const rowsWithItems = nonComplianceSummary.rows.filter((r) => r.items.length > 0);
 
+  if (rowsWithItems.length > 0) {
+    rowsWithItems.forEach((r) => {
+      if (tblY > 240) return; // Proteção contra overflow de página
 
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.0);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(`• ${r.towerName.toUpperCase()} (${r.total} ${r.total === 1 ? 'item' : 'itens'}):`, marginX + 2, tblY);
+      tblY += 3.8;
 
-  // Fotos dos quadros (até 16 fotos acomodadas em uma única página sem pular)
-  if (quadrosPage1.length > 0) {
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.0);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('REGISTROS FOTOGRÁFICOS DOS QUADROS DE ENERGIA', marginX, quadY + 4);
-    quadY += 6;
-
-    const count = quadrosPage1.length;
-    let QUADROS_IMG_H = 41.0;
-    let rowPitch = 49.0;
-    if (count > 12) {
-      QUADROS_IMG_H = 34.0;
-      rowPitch = 40.0;
-    } else if (count > 8) {
-      QUADROS_IMG_H = 37.0;
-      rowPitch = 44.0;
-    }
-
-    for (let i = 0; i < quadrosPage1.length; i++) {
-      const col = i % PHOTO_COLS;
-      const row = Math.floor(i / PHOTO_COLS);
-      const x = marginX + col * (PHOTO_WIDTH_MM + PHOTO_GAP_X_MM);
-      const y = quadY + row * rowPitch;
-
-      if (quadrosJpegsPage1[i]) {
-        pdf.addImage(quadrosJpegsPage1[i], 'JPEG', x, y, PHOTO_WIDTH_MM, QUADROS_IMG_H);
-      }
-
-      const tName = quadrosPage1[i]?.towerName || 'Torre 1';
-      const towerName = isMultiTower ? tName : (quadrosPage1[i]?.towerName ? `[${quadrosPage1[i].towerName}]` : '');
-      const cap = (quadrosPage1[i]?.caption || '').trim();
-      const textBelow = towerName ? (cap ? `${towerName} - ${cap}` : towerName) : cap;
-      if (textBelow) {
+      r.items.slice(0, 5).forEach((item) => {
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(0, 0, 0);
-        pdf.text(textBelow, x + PHOTO_WIDTH_MM / 2, y + QUADROS_IMG_H + 3.2, {
-          align: 'center',
-          maxWidth: PHOTO_WIDTH_MM,
-        });
-      }
-    }
+        pdf.setFontSize(6.2);
+        if (item.type === 'dps') {
+          pdf.setTextColor(185, 28, 28);
+          pdf.text('[FALTA DPS]', marginX + 6, tblY);
+        } else if (item.type === 'equipotential') {
+          pdf.setTextColor(180, 83, 9);
+          pdf.text('[EQUIPOTENCIAL]', marginX + 6, tblY);
+        } else {
+          pdf.setTextColor(71, 85, 105);
+          pdf.text('[ADEQUAÇÃO]', marginX + 6, tblY);
+        }
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(51, 65, 85);
+        pdf.text(item.caption, marginX + 28, tblY, { maxWidth: contentWidth - 30 });
+        tblY += 3.5;
+      });
+      tblY += 1.5;
+    });
   } else {
-    // Se não houver fotos cadastradas
-    pdf.setFont('helvetica', 'italic');
-    pdf.setFontSize(8);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text('Nenhum registro fotográfico dos quadros de distribuição anexado.', marginX + 4, quadY + 8);
+    pdf.setFillColor(240, 253, 244);
+    pdf.setDrawColor(34, 197, 94);
+    pdf.setLineWidth(0.3);
+    pdf.roundedRect(marginX, tblY, contentWidth, 14, 1, 1, 'FD');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(22, 101, 52);
+    pdf.text('✓ NENHUMA NÃO CONFORMIDADE CRÍTICA APONTADA NAS LEGENDAS', marginX + 4, tblY + 5.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.8);
+    pdf.text('Todas as legendas e ensaios avaliados estão em plena conformidade com as diretrizes normativas.', marginX + 4, tblY + 9.5);
+    tblY += 17;
   }
 
-  // Páginas de continuação dos quadros (apenas se houver mais de 16 fotos)
-  for (let cIdx = 0; cIdx < quadrosContChunks.length; cIdx++) {
-    pdf.addPage('a4', 'portrait');
-    drawWatermark(pdf);
-    drawHeaderLogo(pdf);
+  // Parecer de Ação Corretiva Imediata
+  if (tblY <= 245) {
+    pdf.setFillColor(254, 242, 242);
+    pdf.setDrawColor(239, 68, 68);
+    pdf.setLineWidth(0.3);
+    pdf.roundedRect(marginX, tblY + 2, contentWidth, 16, 1, 1, 'FD');
 
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10.5);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('7) ANÁLISE DOS QUADROS DE ENERGIA (CONTINUAÇÃO)', marginX, 36);
+    pdf.setFontSize(7.0);
+    pdf.setTextColor(153, 27, 27);
+    pdf.text('PARECER TÉCNICO SOBRE AS ADEQUAÇÕES APONTADAS:', marginX + 4, tblY + 6.5);
 
-    const curChunk = quadrosContChunks[cIdx];
-    const curJpegs = quadrosContJpegChunks[cIdx];
-    const QUADROS_IMG_H = 41.0;
-    const startY = 44;
-
-    for (let i = 0; i < curChunk.length; i++) {
-      const col = i % PHOTO_COLS;
-      const row = Math.floor(i / PHOTO_COLS);
-      const x = marginX + col * (PHOTO_WIDTH_MM + PHOTO_GAP_X_MM);
-      const y = startY + row * (QUADROS_IMG_H + 9);
-
-      if (curJpegs[i]) {
-        pdf.addImage(curJpegs[i], 'JPEG', x, y, PHOTO_WIDTH_MM, QUADROS_IMG_H);
-      }
-
-      const tName = curChunk[i]?.towerName || 'Torre 1';
-      const towerName = isMultiTower ? tName : (curChunk[i]?.towerName ? `[${curChunk[i].towerName}]` : '');
-      const cap = (curChunk[i]?.caption || '').trim();
-      const textBelow = towerName ? (cap ? `${towerName} - ${cap}` : towerName) : cap;
-      if (textBelow) {
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(0, 0, 0);
-        pdf.text(textBelow, x + PHOTO_WIDTH_MM / 2, y + QUADROS_IMG_H + 3.5, {
-          align: 'center',
-          maxWidth: PHOTO_WIDTH_MM,
-        });
-      }
-    }
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.4);
+    pdf.setTextColor(185, 28, 28);
+    const avisoParecer = 'Todas as irregularidades listadas acima devem ser sanadas prioritariamente por equipe de engenharia e eletricistas qualificados. A falta de equipotencialização compromete o escoamento seguro de descargas elétricas e eleva riscos de centelhamento (NBR 5419-3:2026), e a ausência de DPS deixa circuitos expostos a queimas catastróficas (NBR 5410).';
+    pdf.text(pdf.splitTextToSize(avisoParecer, contentWidth - 8), marginX + 4, tblY + 10.5);
   }
 
   // ==========================================

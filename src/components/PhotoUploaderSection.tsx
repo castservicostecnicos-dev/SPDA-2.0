@@ -43,6 +43,7 @@ import {
   createCondoFolderTree,
   BatchPhotoSaveItem,
 } from '../utils/photoDeviceSync';
+import { countOrphanPhotos } from '../utils/towerSorter';
 
 /**
  * Lê o arquivo de imagem otimizando para uma resolução nítida de alta fidelidade (máx 1600px)
@@ -77,6 +78,7 @@ interface PhotoUploaderSectionProps {
   onSelectTorre?: (torre: string) => void;
   onAddTower?: (nome?: string) => void;
   onDeleteTower?: (torre: string) => void;
+  onPurgeOrphans?: () => void;
   getTowerPhotoCount?: (torre: string) => number;
   condominioNome?: string;
   // Backup & Restore
@@ -102,6 +104,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
   onSelectTorre,
   onAddTower,
   onDeleteTower,
+  onPurgeOrphans,
   getTowerPhotoCount,
   condominioNome,
   report,
@@ -738,6 +741,42 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
           </button>
         </div>
       </div>
+
+      {/* ========================================================
+          ALERTA DE FOTOS ÓRFÃS DE TORRES APAGADAS / EXCLUÍDAS
+          Aparece caso existam fotos de torres que não existem mais
+          ======================================================== */}
+      {(() => {
+        const orphanCount = report ? countOrphanPhotos(report) : 0;
+        if (orphanCount === 0) return null;
+        return (
+          <div className="bg-amber-950/80 border-2 border-amber-500/80 text-amber-100 rounded-xl p-4 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-bold text-amber-300">
+                  ⚠️ Foram detectadas {orphanCount} foto(s) de torre(s) que foram apagadas do laudo!
+                </p>
+                <p className="text-[11px] sm:text-xs text-amber-200/90 mt-0.5">
+                  Fotos de torres excluídas não devem aparecer no PDF ou Word. Clique no botão ao lado para eliminá-las permanentemente.
+                </p>
+              </div>
+            </div>
+            {onPurgeOrphans && (
+              <button
+                type="button"
+                onClick={onPurgeOrphans}
+                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-lg shadow-md transition-all cursor-pointer whitespace-nowrap self-stretch sm:self-auto"
+              >
+                <Trash2 className="w-4 h-4 text-slate-950" />
+                <span>ELIMINAR {orphanCount} FOTO(S) ÓRFÃS AGORA</span>
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ========================================================
           BANNER DE TRANSIÇÃO RÁPIDA: CONCLUIU ESTA TORRE? AVANÇAR

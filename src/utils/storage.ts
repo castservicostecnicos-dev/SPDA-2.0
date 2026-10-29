@@ -95,14 +95,18 @@ export async function saveReportToStorage(
   const isFullSync = options.fullSync ?? false;
 
   try {
-    // 1. Salva na chave ativa do IndexedDB (operação única e ultrarrápida)
+    // 1. Salva na chave ativa e também na chave permanente report_${id} do IndexedDB
     const db = await openDatabase();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       store.put(cleaned, REPORT_KEY);
 
-      if (isFullSync && hasUserContent(cleaned)) {
+      if (cleaned.id) {
+        store.put(cleaned, `report_${cleaned.id}`);
+      }
+
+      if (hasUserContent(cleaned)) {
         store.put(cleaned, BACKUP_REPORT_KEY);
       }
 
@@ -110,7 +114,7 @@ export async function saveReportToStorage(
       tx.onerror = () => reject(tx.error);
     });
 
-    // 2. Grava timestamp leve no localStorage (apenas texto de data, NUNCA o objeto do laudo com fotos!)
+    // 2. Grava timestamp leve no localStorage
     try {
       localStorage.setItem(LAST_SAVED_TIMESTAMP_KEY, timeStr);
       localStorage.setItem('spda_last_active_report_id', cleaned.id);
@@ -121,25 +125,26 @@ export async function saveReportToStorage(
       // ignore
     }
 
-    // 3. Atualizações secundárias (apenas em fullSync para não sobrecarregar I/O no celular)
-    if (isFullSync) {
-      saveLaudoRecord(cleaned).catch(() => {});
-      syncCondominioFromReport(cleaned).catch(() => {});
-      if (cleaned.client?.name) {
-        saveCliente({
-          name: cleaned.client.name,
-          cnpj: cleaned.client.cnpj,
-          local: cleaned.client.local,
-          municipio: cleaned.client.municipio,
-          ramoAtividade: cleaned.client.ramoAtividade,
-          tecnico: cleaned.client.tecnico,
-          cargo: cleaned.client.cargo,
-          crea: cleaned.client.crea,
-          art: cleaned.client.art,
-        }).catch(() => {});
-      }
+    // 3. Atualiza banco mestre relacional para persistência permanente
+    saveLaudoRecord(cleaned).catch(() => {});
+    syncCondominioFromReport(cleaned).catch(() => {});
 
-      // Sincroniza fotos no banco relacional apenas no fullSync
+    if (cleaned.client?.name) {
+      saveCliente({
+        name: cleaned.client.name,
+        cnpj: cleaned.client.cnpj,
+        local: cleaned.client.local,
+        municipio: cleaned.client.municipio,
+        ramoAtividade: cleaned.client.ramoAtividade,
+        tecnico: cleaned.client.tecnico,
+        cargo: cleaned.client.cargo,
+        crea: cleaned.client.crea,
+        art: cleaned.client.art,
+      }).catch(() => {});
+    }
+
+    // Sincroniza fotos no banco relacional
+    if (isFullSync) {
       syncPhotosToFieldStore(cleaned).catch(() => {});
     }
   } catch (err) {
@@ -329,43 +334,122 @@ export interface SavedReportMeta {
 }
 
 /**
- * Retorna a lista de laudos salvos deduplicada
+ * Retorna a lista de laudos salvos de forma resiliente e à prova de falhas:
+ * 1. Escaneia o IndexedDB principal (chaves report_* e active_spda_report)
+ * 2. Escaneia a tabela laudos do banco mestre relacional
+ * 3. Recupera o índice do localStorage
+ * Garante que NENHUM laudo criado pelo usuário seja perdido!
  */
 export async function getSavedReportsList(): Promise<SavedReportMeta[]> {
+  const map = new Map<string, SavedReportMeta>();
+
+  // 1. Escaneia todas as chaves salvas no IndexedDB principal (spda_laudo_database)
   try {
-    // Tenta primeiro pelo índice no localStorage
+    const db = await openDatabase();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.openCursor();
+
+      req.onsuccess = (e) => {
+        const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          const key = String(cursor.key);
+          const rep = cursor.value as SpdaReport;
+
+          if (rep && typeof rep === 'object') {
+            const clientName = rep.client?.name?.trim() || 'Condomínio';
+            const totalPhotos =
+              (rep.spdaPhotos?.length || 0) +
+              (rep.measurementPhotos?.length || 0) +
+              (rep.quadrosPhotos?.length || 0) +
+              (rep.localPhotos?.length || 0) +
+              (rep.equipmentPhotoUrl ? 1 : 0);
+
+            if (key.startsWith('report_')) {
+              const id = key.replace(/^report_/, '');
+              map.set(id, {
+                id,
+                title: rep.title || `Laudo SPDA - ${clientName}`,
+                clientName,
+                clientLocal: rep.client?.local || '',
+                updatedAt: rep.lastSyncedAt ? new Date(rep.lastSyncedAt).toISOString() : new Date().toISOString(),
+                photoCount: totalPhotos,
+              });
+            } else if (key === REPORT_KEY && hasUserContent(rep)) {
+              // Garante que o laudo ativo atual sempre apareça se tiver dados
+              const activeId = rep.id || 'active_spda_report';
+              if (!map.has(activeId)) {
+                map.set(activeId, {
+                  id: activeId,
+                  title: rep.title || `Laudo SPDA - ${clientName} (Em Andamento)`,
+                  clientName,
+                  clientLocal: rep.client?.local || '',
+                  updatedAt: new Date().toISOString(),
+                  photoCount: totalPhotos,
+                });
+              }
+            }
+          }
+          cursor.continue();
+        } else {
+          resolve();
+        }
+      };
+
+      req.onerror = () => resolve();
+    });
+  } catch (err) {
+    console.warn('Aviso ao consultar IndexedDB primário:', err);
+  }
+
+  // 2. Escaneia a tabela laudos do banco mestre relacional (spda_master_db_v2)
+  try {
+    const masterLaudos = await getAllLaudos();
+    if (masterLaudos && masterLaudos.length > 0) {
+      masterLaudos.forEach((l) => {
+        if (l && l.id && !map.has(l.id)) {
+          map.set(l.id, {
+            id: l.id,
+            title: l.title || `Laudo SPDA - ${l.condominioNome || l.clienteNome || 'Condomínio'}`,
+            clientName: l.condominioNome || l.clienteNome || 'Condomínio',
+            clientLocal: l.client?.local || '',
+            updatedAt: l.updatedAt || new Date().toISOString(),
+            photoCount: l.photoCount || 0,
+          });
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('Aviso ao consultar banco mestre:', err);
+  }
+
+  // 3. Recupera o índice do localStorage para complementar
+  try {
     const raw = localStorage.getItem(SAVED_REPORTS_INDEX_KEY);
     if (raw) {
       const list: SavedReportMeta[] = JSON.parse(raw);
-      const seen = new Set<string>();
-      const cleaned = list.filter((item) => {
-        if (!item || !item.id || item.id === 'autosave-checkpoint-latest') return false;
-        if (seen.has(item.id)) return false;
-        seen.add(item.id);
-        return true;
+      list.forEach((item) => {
+        if (item && item.id && !map.has(item.id)) {
+          map.set(item.id, item);
+        }
       });
-      if (cleaned.length > 0) return cleaned;
     }
+  } catch {}
 
-    // Se estiver vazio no localStorage, consulta a tabela laudos do banco mestre
-    const masterLaudos = await getAllLaudos();
-    if (masterLaudos.length > 0) {
-      const converted: SavedReportMeta[] = masterLaudos.map((l) => ({
-        id: l.id,
-        title: l.title,
-        clientName: l.condominioNome || l.clienteNome || 'Condomínio',
-        clientLocal: l.client?.local || '',
-        updatedAt: l.updatedAt,
-        photoCount: l.photoCount || 0,
-      }));
-      localStorage.setItem(SAVED_REPORTS_INDEX_KEY, JSON.stringify(converted));
-      return converted;
-    }
+  // 4. Converte para array ordenado do mais recente para o mais antigo
+  const combined = Array.from(map.values()).sort((a, b) => {
+    const dateA = new Date(a.updatedAt || 0).getTime();
+    const dateB = new Date(b.updatedAt || 0).getTime();
+    return dateB - dateA;
+  });
 
-    return [];
-  } catch {
-    return [];
-  }
+  // Atualiza cache do localStorage
+  try {
+    localStorage.setItem(SAVED_REPORTS_INDEX_KEY, JSON.stringify(combined));
+  } catch {}
+
+  return combined;
 }
 
 /**
