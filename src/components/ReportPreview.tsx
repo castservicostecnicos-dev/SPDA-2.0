@@ -96,6 +96,8 @@ interface TowerSectionBlock {
   number: string;
   title: string;
   photos: PhotoSlot[];
+  towerName?: string;
+  isNewTower?: boolean;
 }
 
 interface TowerInspectionPage {
@@ -108,9 +110,22 @@ interface TowerInspectionPage {
 
 function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPage[] {
   const allPages: TowerInspectionPage[] = [];
+  const MAX_PER_PAGE = 16; // 4 linhas de 4 fotos por página A4
+
+  let currentBlocks: TowerSectionBlock[] = [];
+  let countInPage = 0;
+  let currentPageTowerName = groups[0]?.towerName || 'Torre 1';
+  let currentPageIsAreaComum = groups[0]?.isAreaComum || false;
 
   groups.forEach((group) => {
-    const sections: TowerSectionBlock[] = [
+    if (group.totalPhotos === 0 && groups.length > 1) return;
+
+    const sections: Array<{
+      type: 'medicao' | 'spda' | 'quadros';
+      number: string;
+      title: string;
+      photos: PhotoSlot[];
+    }> = [
       {
         type: 'medicao',
         number: '1',
@@ -131,40 +146,30 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
       },
     ];
 
-    if (group.totalPhotos === 0) {
-      allPages.push({
-        towerName: group.towerName,
-        isAreaComum: group.isAreaComum,
-        pageIndexInTower: 1,
-        totalTowerPages: 1,
-        blocks: sections,
-      });
-      return;
-    }
-
-    const towerPages: TowerInspectionPage[] = [];
-    let currentBlocks: TowerSectionBlock[] = [];
-    let countInPage = 0;
+    let isFirstBlockOfThisTower = true;
 
     sections.forEach((sec) => {
       if (sec.photos.length === 0) return;
 
       let remaining = [...sec.photos];
       while (remaining.length > 0) {
-        const spaceLeft = 12 - countInPage;
-        if (spaceLeft <= 2 && countInPage > 0) {
-          towerPages.push({
-            towerName: group.towerName,
-            isAreaComum: group.isAreaComum,
-            pageIndexInTower: towerPages.length + 1,
+        const spaceLeft = MAX_PER_PAGE - countInPage;
+        // Se a página já possui fotos e não cabe pelo menos 1 linha de 4 fotos, inicia nova página
+        if (spaceLeft < 4 && countInPage > 0) {
+          allPages.push({
+            towerName: currentPageTowerName,
+            isAreaComum: currentPageIsAreaComum,
+            pageIndexInTower: allPages.length + 1,
             totalTowerPages: 0,
             blocks: currentBlocks,
           });
           currentBlocks = [];
           countInPage = 0;
+          currentPageTowerName = group.towerName;
+          currentPageIsAreaComum = group.isAreaComum;
         }
 
-        const takeCount = Math.min(remaining.length, Math.max(4, 12 - countInPage));
+        const takeCount = Math.min(remaining.length, MAX_PER_PAGE - countInPage);
         const slice = remaining.slice(0, takeCount);
         remaining = remaining.slice(takeCount);
 
@@ -173,38 +178,43 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
           number: sec.number,
           title: sec.title,
           photos: slice,
+          towerName: group.towerName,
+          isNewTower: isFirstBlockOfThisTower,
         });
+
+        isFirstBlockOfThisTower = false;
         countInPage += slice.length;
 
-        if (countInPage >= 12 && remaining.length > 0) {
-          towerPages.push({
-            towerName: group.towerName,
-            isAreaComum: group.isAreaComum,
-            pageIndexInTower: towerPages.length + 1,
+        if (countInPage >= MAX_PER_PAGE) {
+          allPages.push({
+            towerName: currentPageTowerName,
+            isAreaComum: currentPageIsAreaComum,
+            pageIndexInTower: allPages.length + 1,
             totalTowerPages: 0,
             blocks: currentBlocks,
           });
           currentBlocks = [];
           countInPage = 0;
+          currentPageTowerName = group.towerName;
+          currentPageIsAreaComum = group.isAreaComum;
         }
       }
     });
+  });
 
-    if (currentBlocks.length > 0) {
-      towerPages.push({
-        towerName: group.towerName,
-        isAreaComum: group.isAreaComum,
-        pageIndexInTower: towerPages.length + 1,
-        totalTowerPages: 0,
-        blocks: currentBlocks,
-      });
-    }
-
-    towerPages.forEach((p) => {
-      p.totalTowerPages = towerPages.length;
+  if (currentBlocks.length > 0) {
+    allPages.push({
+      towerName: currentPageTowerName,
+      isAreaComum: currentPageIsAreaComum,
+      pageIndexInTower: allPages.length + 1,
+      totalTowerPages: 0,
+      blocks: currentBlocks,
     });
+  }
 
-    allPages.push(...towerPages);
+  allPages.forEach((p, idx) => {
+    p.pageIndexInTower = idx + 1;
+    p.totalTowerPages = allPages.length;
   });
 
   return allPages;
@@ -871,6 +881,18 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
                 const totalPhotosInBlock = block.photos.length;
                 return (
                   <div key={bIdx} className="space-y-1.5 pt-0.5">
+                    {/* Se este bloco for o início de uma nova torre no meio da página, desenha o banner da torre */}
+                    {block.isNewTower && bIdx > 0 && (
+                      <div className="bg-slate-900 text-white px-3 py-1 rounded-sm flex items-center justify-between shadow-xs mt-3 mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-amber-400" />
+                          <h2 className="text-[10px] font-black uppercase tracking-wider">
+                            VISTORIA & ENSAIOS TÉCNICOS: {(block.towerName || page.towerName).toUpperCase()}
+                          </h2>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Título da subseção */}
                     <div className="flex items-center justify-between border-b border-slate-300 pb-0.5">
                       <div className="flex items-center gap-1.5">
@@ -889,7 +911,7 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
                     {/* Grade de fotos (4 colunas) */}
                     {totalPhotosInBlock > 0 ? (
                       <div
-                        className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[4mm] w-full"
+                        className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[3mm] w-full"
                         style={{ width: '170mm' }}
                       >
                         {block.photos.map((photo, phIdx) => {
@@ -907,7 +929,7 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
                               key={photo.id || phIdx}
                               className="flex flex-col items-center flex-shrink-0"
                             >
-                              <div className="w-[38.5mm] h-[45mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
+                              <div className="w-[38.5mm] h-[41.5mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
                                 <img
                                   src={photo.url}
                                   alt={cap || `Foto ${phIdx + 1}`}

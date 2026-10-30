@@ -905,21 +905,32 @@ export const DatabaseManagerModal: React.FC<DatabaseManagerModalProps> = ({
                       key={laudo.id}
                       className="p-3.5 bg-slate-800/60 hover:bg-slate-800 border border-slate-700 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors"
                     >
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-white">{laudo.title}</span>
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <Building2 className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                            <span className="font-extrabold text-sm sm:text-base text-amber-300 tracking-wide break-words">
+                              {laudo.condominioNome || laudo.clienteNome || 'Condomínio'}
+                            </span>
+                          </div>
                           {laudo.id === currentReport.id && (
-                            <span className="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1.5 py-0.2 rounded font-bold">
-                              EM EDIÇÃO
+                            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
+                              EM EDIÇÃO ATUAL
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-400">
-                          Condomínio: <strong className="text-slate-300">{laudo.condominioNome}</strong> • {laudo.photoCount} foto(s) registradas
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          Atualizado em: {new Date(laudo.updatedAt).toLocaleDateString('pt-BR')} às {new Date(laudo.updatedAt).toLocaleTimeString('pt-BR')}
-                        </p>
+                        <div className="text-xs sm:text-sm font-semibold text-white break-words flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                          <span>{laudo.title}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
+                          <span className="bg-slate-900 border border-slate-700 px-2 py-0.5 rounded text-cyan-300 font-semibold">
+                            {laudo.photoCount} foto(s) registradas
+                          </span>
+                          <span className="bg-slate-900 border border-slate-700 px-2 py-0.5 rounded text-slate-300">
+                            Atualizado em: {new Date(laudo.updatedAt).toLocaleDateString('pt-BR')} às {new Date(laudo.updatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-1.5 self-end sm:self-center">

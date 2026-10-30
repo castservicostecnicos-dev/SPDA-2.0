@@ -1392,7 +1392,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-2">
               {measurementPhotos.map((photo, index) => (
                 <div
                   key={photo.id || index}

@@ -358,19 +358,41 @@ export async function getSavedReportsList(): Promise<SavedReportMeta[]> {
           const rep = cursor.value as SpdaReport;
 
           if (rep && typeof rep === 'object') {
-            const clientName = rep.client?.name?.trim() || 'Condomínio';
-            const totalPhotos =
+            const rawClientName = rep.client?.name?.trim();
+            let clientName = rawClientName || '';
+            if (!clientName || clientName.toLowerCase() === 'condomínio' || clientName.toLowerCase() === 'condominio') {
+              const fromTitle = rep.title?.match(/Laudo\s+SPDA\s*[-–:]\s*([^(]+)/i);
+              if (fromTitle && fromTitle[1].trim() && !/condom[íi]nio$/i.test(fromTitle[1].trim())) {
+                clientName = fromTitle[1].trim();
+              } else {
+                clientName = rawClientName || 'Condomínio';
+              }
+            }
+
+            let totalPhotos =
               (rep.spdaPhotos?.length || 0) +
               (rep.measurementPhotos?.length || 0) +
               (rep.quadrosPhotos?.length || 0) +
               (rep.localPhotos?.length || 0) +
               (rep.equipmentPhotoUrl ? 1 : 0);
 
+            if (rep.torresData) {
+              let tCount = (rep.localPhotos?.length || 0) + (rep.equipmentPhotoUrl ? 1 : 0);
+              Object.values(rep.torresData).forEach((tData) => {
+                tCount += (tData.spdaPhotos?.length || 0) + (tData.measurementPhotos?.length || 0) + (tData.quadrosPhotos?.length || 0);
+              });
+              if (tCount > totalPhotos) totalPhotos = tCount;
+            }
+
+            const cleanTitle = rep.title && !rep.title.startsWith('Laudo de Inspeção SPDA - SPDA-')
+              ? rep.title
+              : `Laudo SPDA - ${clientName}`;
+
             if (key.startsWith('report_')) {
               const id = key.replace(/^report_/, '');
               map.set(id, {
                 id,
-                title: rep.title || `Laudo SPDA - ${clientName}`,
+                title: cleanTitle,
                 clientName,
                 clientLocal: rep.client?.local || '',
                 updatedAt: rep.lastSyncedAt ? new Date(rep.lastSyncedAt).toISOString() : new Date().toISOString(),
@@ -382,7 +404,7 @@ export async function getSavedReportsList(): Promise<SavedReportMeta[]> {
               if (!map.has(activeId)) {
                 map.set(activeId, {
                   id: activeId,
-                  title: rep.title || `Laudo SPDA - ${clientName} (Em Andamento)`,
+                  title: `${cleanTitle} (Em Andamento)`,
                   clientName,
                   clientLocal: rep.client?.local || '',
                   updatedAt: new Date().toISOString(),

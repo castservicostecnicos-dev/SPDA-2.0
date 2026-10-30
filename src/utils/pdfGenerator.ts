@@ -1447,20 +1447,40 @@ export const generatePdfBlob = async (
 
   // ==========================================
   // SEÇÃO 6: VISTORIA E ENSAIOS TÉCNICOS POR TORRE
+  // ==========================================
+  // SEÇÃO 6: VISTORIA E ENSAIOS TÉCNICOS POR TORRE
   // FORMATO POR TORRE ("VÁRIOS LAUDOS DENTRO DE UM LAUDO GERAL"):
   // Para cada torre / bloco:
   //   1) Pontos de Inspeção (Continuidade Elétrica com Miliohmímetro)
   //   2) Vistoria do SPDA Existente & Captores
   //   3) Análise dos Quadros de Energia e DPS (NBR 5410)
+  // Ocupa rigorosamente até 4 fotos por linha e o máximo de linhas por página,
+  // eliminando páginas semi-vazias e aproveitando 100% da área útil do A4.
   // ==========================================
   onProgress?.(68, 'Gerando Vistorias Técnicas por Torre...');
 
-  const PHOTO_IMG_H = 46.0;
-  const CELL_H = 57.0;
+  const PHOTO_IMG_H = 41.5; // Altura otimizada para fotos nítidas 4:3
+  const CELL_H = 49.0;      // Altura da célula compacta (permite até 4 linhas = 16 fotos por página A4)
+  let curTowerY = 36;
+  let isTowerSectionStarted = false;
+
+  const startTowerPage = (titleStr: string) => {
+    pdf.addPage('a4', 'portrait');
+    drawWatermark(pdf);
+    drawHeaderLogo(pdf);
+
+    pdf.setFillColor(15, 23, 42); // Azul escuro executivo
+    pdf.roundedRect(marginX, 36, contentWidth, 7.5, 1, 1, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8.8);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(titleStr, marginX + 4, 41.0);
+
+    curTowerY = 46.5;
+  };
 
   towerGroups.forEach((group, gIdx) => {
     const totalPhotos = group.totalPhotos;
-    // Se a torre tiver fotos ou for a única torre, gera página dedicada
     if (totalPhotos === 0 && towerGroups.length > 1) {
       return;
     }
@@ -1470,27 +1490,23 @@ export const generatePdfBlob = async (
       `Gerando Vistoria: ${group.towerName}...`
     );
 
-    let curTowerY = 36;
+    const towerTitle = `6.${gIdx + 1}) VISTORIA & ENSAIOS TÉCNICOS: ${group.towerName.toUpperCase()}`;
 
-    const startTowerPage = (isContinuation = false, catName = '') => {
-      pdf.addPage('a4', 'portrait');
-      drawWatermark(pdf);
-      drawHeaderLogo(pdf);
-
-      pdf.setFillColor(15, 23, 42); // Azul escuro executivo
-      pdf.roundedRect(marginX, 36, contentWidth, 8, 1, 1, 'F');
+    // Se a seção ainda não começou ou se não há espaço suficiente para o cabeçalho e pelo menos 1 linha de 4 fotos (57mm):
+    if (!isTowerSectionStarted || curTowerY + 57 > 274) {
+      startTowerPage(towerTitle);
+      isTowerSectionStarted = true;
+    } else {
+      // Inicia a torre na mesma página com divisor compacto, aproveitando as linhas livres
+      curTowerY += 2;
+      pdf.setFillColor(15, 23, 42);
+      pdf.roundedRect(marginX, curTowerY, contentWidth, 7.5, 1, 1, 'F');
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(9.0);
+      pdf.setFontSize(8.8);
       pdf.setTextColor(255, 255, 255);
-      const titleStr = isContinuation
-        ? `6.${gIdx + 1}) VISTORIA TÉCNICA: ${group.towerName.toUpperCase()} — ${catName} (CONTINUAÇÃO)`
-        : `6.${gIdx + 1}) VISTORIA & ENSAIOS TÉCNICOS: ${group.towerName.toUpperCase()}`;
-      pdf.text(titleStr, marginX + 4, 41.2);
-
-      curTowerY = 47;
-    };
-
-    startTowerPage(false);
+      pdf.text(towerTitle, marginX + 4, curTowerY + 5.0);
+      curTowerY += 10.5;
+    }
 
     // 3 subseções canônicas por torre
     const subsections: Array<{
@@ -1520,34 +1536,28 @@ export const generatePdfBlob = async (
     ];
 
     subsections.forEach((sub) => {
-      // Se não couber o cabeçalho e pelo menos 1 linha de foto, quebra a página
-      if (curTowerY + 22 > 272) {
-        startTowerPage(true, sub.title);
+      // Pula subseções que não possuem fotos para NÃO deixar faixas ou espaços vazios
+      if (sub.photos.length === 0) return;
+
+      // Se não couber o cabeçalho da subseção e pelo menos 1 linha de foto (CELL_H + 7 = 56mm), quebra a página
+      if (curTowerY + CELL_H + 6 > 275) {
+        startTowerPage(`${towerTitle} — ${sub.title} (CONTINUAÇÃO)`);
       }
 
-      // Faixa da subseção
+      // Faixa compacta da subseção
       pdf.setFillColor(241, 245, 249);
-      pdf.rect(marginX, curTowerY, contentWidth, 6, 'F');
+      pdf.rect(marginX, curTowerY, contentWidth, 5.5, 'F');
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.6);
+      pdf.setFontSize(7.4);
       pdf.setTextColor(15, 23, 42);
-      pdf.text(`${sub.num}) ${sub.title}`, marginX + 3, curTowerY + 4.2);
-      curTowerY += 8;
+      pdf.text(`${sub.num}) ${sub.title}`, marginX + 3, curTowerY + 3.8);
+      curTowerY += 7.0;
 
-      if (sub.photos.length === 0) {
-        pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(7.0);
-        pdf.setTextColor(100, 116, 139);
-        pdf.text('Nenhum registro fotográfico nesta seção para esta torre.', marginX + 3, curTowerY + 2);
-        curTowerY += 7;
-        return;
-      }
-
-      // Renderizar fotos em linhas de 4 colunas
+      // Renderizar fotos em linhas de até 4 colunas preenchendo a página ao máximo
       const photoChunks = chunkArray(sub.photos, PHOTO_COLS);
       photoChunks.forEach((chunk) => {
         if (curTowerY + CELL_H > 275) {
-          startTowerPage(true, sub.title);
+          startTowerPage(`${towerTitle} — ${sub.title} (CONTINUAÇÃO)`);
         }
 
         chunk.forEach((p, cIdx) => {
@@ -1572,29 +1582,29 @@ export const generatePdfBlob = async (
           const isFaltaDps = /falta\s*dps|sem\s*dps|instalar\s*dps|aus[eê]ncia\s*de\s*dps/i.test(capLower);
           const isFaltaEquipot = /falta\s*equipot|n[aã]o\s*equipot|equipotencializar|precisa\s*equipot/i.test(capLower);
 
-          let labelY = y + PHOTO_IMG_H + 2.8;
+          let labelY = y + PHOTO_IMG_H + 2.5;
 
           if (isFaltaDps) {
             pdf.setFillColor(254, 226, 226);
-            pdf.roundedRect(x + 1, labelY - 2.0, PHOTO_WIDTH_MM - 2, 3.2, 0.4, 0.4, 'F');
+            pdf.roundedRect(x + 1, labelY - 2.0, PHOTO_WIDTH_MM - 2, 3.0, 0.4, 0.4, 'F');
             pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(5.5);
+            pdf.setFontSize(5.2);
             pdf.setTextColor(185, 28, 28);
-            pdf.text('⚠ FALTA DPS', x + PHOTO_WIDTH_MM / 2, labelY + 0.3, { align: 'center' });
-            labelY += 3.6;
+            pdf.text('⚠ FALTA DPS', x + PHOTO_WIDTH_MM / 2, labelY + 0.2, { align: 'center' });
+            labelY += 3.3;
           } else if (isFaltaEquipot) {
             pdf.setFillColor(254, 243, 199);
-            pdf.roundedRect(x + 1, labelY - 2.0, PHOTO_WIDTH_MM - 2, 3.2, 0.4, 0.4, 'F');
+            pdf.roundedRect(x + 1, labelY - 2.0, PHOTO_WIDTH_MM - 2, 3.0, 0.4, 0.4, 'F');
             pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(5.5);
+            pdf.setFontSize(5.2);
             pdf.setTextColor(180, 83, 9);
-            pdf.text('⚠ FALTA EQUIPOTENCIALIZAR', x + PHOTO_WIDTH_MM / 2, labelY + 0.3, { align: 'center' });
-            labelY += 3.6;
+            pdf.text('⚠ FALTA EQUIPOTENCIALIZAR', x + PHOTO_WIDTH_MM / 2, labelY + 0.2, { align: 'center' });
+            labelY += 3.3;
           }
 
           // Texto descritivo
           pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(6.2);
+          pdf.setFontSize(6.0);
           pdf.setTextColor(15, 23, 42);
           const fullDesc = [cap || 'Registro de inspeção', val ? `(${val})` : ''].filter(Boolean).join(' ');
           const splitLines = pdf.splitTextToSize(fullDesc, PHOTO_WIDTH_MM);
@@ -1604,10 +1614,10 @@ export const generatePdfBlob = async (
           });
         });
 
-        curTowerY += CELL_H + 2;
+        curTowerY += CELL_H + 1.2;
       });
 
-      curTowerY += 2;
+      curTowerY += 1.5;
     });
   });
 

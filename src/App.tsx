@@ -762,17 +762,40 @@ export default function App() {
         certificateAuthority: 'Padrão ICP-Brasil / CREA Confea',
       };
     }
+
+    // Garante que a torre ativa possua estritamente suas fotos carregadas para edição
+    const currentTower = loaded.torreAtual || loaded.client?.torresNomes?.[0] || 'Torre 1';
+    loaded.torreAtual = currentTower;
+    if (loaded.torresData && loaded.torresData[currentTower]) {
+      const activeData = loaded.torresData[currentTower];
+      loaded.spdaPhotos = [...(activeData.spdaPhotos || [])];
+      loaded.measurementPhotos = [...(activeData.measurementPhotos || [])];
+      loaded.quadrosPhotos = [...(activeData.quadrosPhotos || [])];
+      if (activeData.localPhotos && activeData.localPhotos.length > 0) {
+        loaded.localPhotos = [...activeData.localPhotos];
+      }
+      if (activeData.equipmentPhotoUrl) {
+        loaded.equipmentPhotoUrl = activeData.equipmentPhotoUrl;
+      }
+    }
+
     setReport(loaded);
-    saveReportToStorage(loaded);
+    reportRef.current = loaded;
+    saveReportToStorage(loaded, { fullSync: true });
     setHasUnsavedChanges(false);
-    setSaveToast(`Laudo "${loaded.title || loaded.client?.name || 'SPDA'}" carregado com sucesso para edição!`);
+
+    const condoName = loaded.client?.name?.trim() || 'Condomínio';
+    const totalTowers = loaded.client?.quantidadeTorres || 1;
+    setSaveToast(`✓ Laudo "${loaded.title || condoName}" aberto para edição! (${totalTowers} ${totalTowers === 1 ? 'torre' : 'torres'})`);
     setTimeout(() => setSaveToast(null), 4500);
+
+    // Abre na aba de fotos para o usuário ver e editar as imagens da torre ativa imediatamente
     setActiveTab('fotos');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 
     // Garante apenas a criação imediata da árvore de pastas físicas do condomínio caso ainda não exista
-    const condoName = loaded.client?.name?.trim() || 'Condomínio';
     const towers = (loaded.client?.quantidadeTorres || 1) > 1
-      ? Array.from({ length: loaded.client?.quantidadeTorres || 1 }, (_, i) => `Torre ${i + 1}`)
+      ? (loaded.client?.torresNomes || Array.from({ length: loaded.client?.quantidadeTorres || 1 }, (_, i) => `Torre ${i + 1}`))
       : ['Torre 1'];
     createCondoFolderTree(condoName, ['Área Comum', ...towers]).catch(() => {});
   };

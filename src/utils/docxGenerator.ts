@@ -1377,64 +1377,61 @@ export async function generateDocxBlob(
   );
 
   // =========================================================================
+  // =========================================================================
   // SEÇÃO 6: VISTORIA E ENSAIOS TÉCNICOS POR TORRE
   // FORMATO POR TORRE ("VÁRIOS LAUDOS DENTRO DE UM LAUDO GERAL"):
   // Para cada torre / bloco:
   //   1) Pontos de Inspeção (Continuidade Elétrica com Miliohmímetro)
   //   2) Vistoria do SPDA Existente & Captores
   //   3) Análise dos Quadros de Energia e DPS (NBR 5410)
+  // Ocupa até 4 fotos por linha e o máximo de linhas por página sem espaços vazios
   // =========================================================================
+  let docxPhotosRenderedSoFar = 0;
+
   towerGroups.forEach((group, gIdx) => {
     const totalPhotos = group.totalPhotos;
     if (totalPhotos === 0 && towerGroups.length > 1) {
       return;
     }
 
+    // Quebra de página na primeira torre ou quando a página já tiver acumulado 12 ou mais fotos (3 a 4 linhas)
+    if (gIdx === 0 || docxPhotosRenderedSoFar >= 12) {
+      docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+      docxPhotosRenderedSoFar = 0;
+    } else {
+      // Espaçador compacto entre torres quando couberem na mesma página
+      docChildren.push(new Paragraph({ spacing: { before: 100, after: 0 }, children: [] }));
+    }
+
     docChildren.push(
-      new Paragraph({ children: [new PageBreak()] }),
-      createSectionHeader(`6.${gIdx + 1}) VISTORIA & ENSAIOS TÉCNICOS: ${group.towerName.toUpperCase()}`),
-      createSubheaderBanner(`6.${gIdx + 1}.1) PONTOS DE ENSAIO DE CONTINUIDADE ÔHMICA (MILIOHMÍMETRO)`)
+      createSectionHeader(`6.${gIdx + 1}) VISTORIA & ENSAIOS TÉCNICOS: ${group.towerName.toUpperCase()}`)
     );
 
+    // 6.x.1) PONTOS DE ENSAIO DE CONTINUIDADE ÔHMICA (apenas se houver fotos)
     if (group.measurementPhotos.length > 0) {
-      docChildren.push(createPhotoGridTable(group.measurementPhotos, photoJpegMap, isMultiTower, true, 110));
-    } else {
       docChildren.push(
-        new Paragraph({
-          spacing: { before: 20, after: 40 },
-          children: [new TextRun({ text: '(Nenhum ponto de medição registrado nesta torre).', italics: true, size: 14, color: '64748B', font: 'Arial' })],
-        })
+        createSubheaderBanner(`6.${gIdx + 1}.1) PONTOS DE ENSAIO DE CONTINUIDADE ÔHMICA (MILIOHMÍMETRO)`),
+        createPhotoGridTable(group.measurementPhotos, photoJpegMap, isMultiTower, true, 115)
       );
+      docxPhotosRenderedSoFar += group.measurementPhotos.length;
     }
 
-    docChildren.push(
-      createSubheaderBanner(`6.${gIdx + 1}.2) VISTORIA DO SPDA EXISTENTE, CAPTORES & DESCIDAS`)
-    );
-
+    // 6.x.2) VISTORIA DO SPDA EXISTENTE (apenas se houver fotos)
     if (group.spdaPhotos.length > 0) {
-      docChildren.push(createPhotoGridTable(group.spdaPhotos, photoJpegMap, isMultiTower, false, 120));
-    } else {
       docChildren.push(
-        new Paragraph({
-          spacing: { before: 20, after: 40 },
-          children: [new TextRun({ text: '(Nenhum registro fotográfico de SPDA registrado nesta torre).', italics: true, size: 14, color: '64748B', font: 'Arial' })],
-        })
+        createSubheaderBanner(`6.${gIdx + 1}.2) VISTORIA DO SPDA EXISTENTE, CAPTORES & DESCIDAS`),
+        createPhotoGridTable(group.spdaPhotos, photoJpegMap, isMultiTower, false, 115)
       );
+      docxPhotosRenderedSoFar += group.spdaPhotos.length;
     }
 
-    docChildren.push(
-      createSubheaderBanner(`6.${gIdx + 1}.3) ANÁLISE DOS QUADROS DE ENERGIA & DPS (ABNT NBR 5410)`)
-    );
-
+    // 6.x.3) ANÁLISE DOS QUADROS DE ENERGIA & DPS (apenas se houver fotos)
     if (group.quadrosPhotos.length > 0) {
-      docChildren.push(createPhotoGridTable(group.quadrosPhotos, photoJpegMap, isMultiTower, false, 120));
-    } else {
       docChildren.push(
-        new Paragraph({
-          spacing: { before: 20, after: 40 },
-          children: [new TextRun({ text: '(Nenhum registro de quadros elétricos nesta torre).', italics: true, size: 14, color: '64748B', font: 'Arial' })],
-        })
+        createSubheaderBanner(`6.${gIdx + 1}.3) ANÁLISE DOS QUADROS DE ENERGIA & DPS (ABNT NBR 5410)`),
+        createPhotoGridTable(group.quadrosPhotos, photoJpegMap, isMultiTower, false, 115)
       );
+      docxPhotosRenderedSoFar += group.quadrosPhotos.length;
     }
   });
 
