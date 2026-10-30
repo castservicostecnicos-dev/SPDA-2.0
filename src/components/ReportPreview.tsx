@@ -110,7 +110,7 @@ interface TowerInspectionPage {
 
 function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPage[] {
   const allPages: TowerInspectionPage[] = [];
-  const MAX_PER_PAGE = 16; // 4 linhas de 4 fotos por página A4
+  const MAX_PER_PAGE = 20; // 5 linhas de 4 fotos por página A4 (até 20 fotos por página)
 
   let currentBlocks: TowerSectionBlock[] = [];
   let countInPage = 0;
@@ -911,7 +911,7 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
                     {/* Grade de fotos (4 colunas) */}
                     {totalPhotosInBlock > 0 ? (
                       <div
-                        className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[3mm] w-full"
+                        className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[2mm] w-full"
                         style={{ width: '170mm' }}
                       >
                         {block.photos.map((photo, phIdx) => {
@@ -929,7 +929,7 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
                               key={photo.id || phIdx}
                               className="flex flex-col items-center flex-shrink-0"
                             >
-                              <div className="w-[38.5mm] h-[41.5mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
+                              <div className="w-[38.5mm] h-[34.5mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
                                 <img
                                   src={photo.url}
                                   alt={cap || `Foto ${phIdx + 1}`}

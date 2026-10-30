@@ -600,6 +600,22 @@ async function importFromPdf(file: File): Promise<ImportResult> {
       const pageImages: ExtractedPdfImage[] = [];
 
       try {
+        const viewport = page.getViewport({ scale: 1.5 });
+        const pageHeightPt = page.view ? (page.view[3] - page.view[1]) : (viewport.height / 1.5);
+
+        // Renderiza a página em canvas offscreen com proteção de timeout
+        let renderCanvas: HTMLCanvasElement | null = document.createElement('canvas');
+        renderCanvas.width = viewport.width;
+        renderCanvas.height = viewport.height;
+        let renderCtx: CanvasRenderingContext2D | null = renderCanvas.getContext('2d');
+
+        if (renderCtx) {
+          await Promise.race([
+            page.render({ canvasContext: renderCtx, viewport }).promise,
+            new Promise((resolve) => setTimeout(resolve, 2500)),
+          ]);
+        }
+
         const ops = await page.getOperatorList();
         let currentCTM = [1, 0, 0, 1, 0, 0];
 
@@ -611,11 +627,46 @@ async function importFromPdf(file: File): Promise<ImportResult> {
             currentCTM = args;
           } else if (fn === pdfjsLib.OPS.paintImageXObject || fn === pdfjsLib.OPS.paintInlineImageXObject) {
             const imgKey = args[0];
-            const imgObj = await new Promise<any>((resolve) => {
-              page.objs.get(imgKey, (obj: any) => resolve(obj));
-            });
+            const w = Math.abs(currentCTM[0]) || 150;
+            const h = Math.abs(currentCTM[3]) || 120;
+            const x = currentCTM[4] || 0;
+            const y = currentCTM[5] || 0;
 
-            if (imgObj && imgObj.data && imgObj.width > 90 && imgObj.height > 90) {
+            // Ignora elementos mínimos ou barras decorativas
+            if (w < 60 || h < 60) continue;
+
+            let dataUrl = '';
+
+            // 1. Tenta extrair diretamente dos objetos decodificados com timeout de 100ms
+            let imgObj: any = null;
+            if (fn === pdfjsLib.OPS.paintInlineImageXObject && typeof args[0] === 'object') {
+              imgObj = args[0];
+            } else if (typeof imgKey === 'string') {
+              imgObj = await new Promise<any>((resolve) => {
+                const timer = setTimeout(() => resolve(null), 120);
+                try {
+                  if (page.objs && typeof page.objs.get === 'function') {
+                    page.objs.get(imgKey, (obj: any) => {
+                      clearTimeout(timer);
+                      resolve(obj);
+                    });
+                  } else if (page.commonObjs && typeof page.commonObjs.get === 'function') {
+                    page.commonObjs.get(imgKey, (obj: any) => {
+                      clearTimeout(timer);
+                      resolve(obj);
+                    });
+                  } else {
+                    clearTimeout(timer);
+                    resolve(null);
+                  }
+                } catch {
+                  clearTimeout(timer);
+                  resolve(null);
+                }
+              });
+            }
+
+            if (imgObj && imgObj.data && imgObj.width > 60 && imgObj.height > 60) {
               const canvas = document.createElement('canvas');
               canvas.width = imgObj.width;
               canvas.height = imgObj.height;
@@ -637,26 +688,56 @@ async function importFromPdf(file: File): Promise<ImportResult> {
                   }
                 }
                 ctx.putImageData(imgData, 0, 0);
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
-
-                if (!isCompanyLogoDataUrl(dataUrl)) {
-                  const w = Math.abs(currentCTM[0]) || imgObj.width;
-                  const h = Math.abs(currentCTM[3]) || imgObj.height;
-                  const x = currentCTM[4] || 0;
-                  const y = currentCTM[5] || 0;
-                  pageImages.push({
-                    dataUrl,
-                    x,
-                    y,
-                    w,
-                    h,
-                    topY: y + h,
-                  });
-                }
+                dataUrl = canvas.toDataURL('image/jpeg', 0.88);
               }
+            }
+
+            // 2. Se não conseguiu via imgObj, recorta com precisão milimétrica da página renderizada
+            if (!dataUrl && renderCanvas && renderCtx) {
+              try {
+                const cropCanvas = document.createElement('canvas');
+                const cropW = Math.max(10, Math.round(w * 1.5));
+                const cropH = Math.max(10, Math.round(h * 1.5));
+                cropCanvas.width = cropW;
+                cropCanvas.height = cropH;
+                const cropCtx = cropCanvas.getContext('2d');
+
+                if (cropCtx) {
+                  const cropX = Math.max(0, Math.round(x * 1.5));
+                  const cropY = Math.max(0, Math.round((pageHeightPt - (y + h)) * 1.5));
+                  cropCtx.drawImage(
+                    renderCanvas,
+                    cropX,
+                    cropY,
+                    cropW,
+                    cropH,
+                    0,
+                    0,
+                    cropW,
+                    cropH
+                  );
+                  dataUrl = cropCanvas.toDataURL('image/jpeg', 0.88);
+                }
+              } catch (cropErr) {
+                console.warn('Aviso de recorte de imagem:', cropErr);
+              }
+            }
+
+            if (dataUrl && !isCompanyLogoDataUrl(dataUrl)) {
+              pageImages.push({
+                dataUrl,
+                x,
+                y,
+                w,
+                h,
+                topY: y + h,
+              });
             }
           }
         }
+
+        renderCanvas = null;
+        renderCtx = null;
       } catch (opErr) {
         console.warn('Erro ao ler operadores da página:', opErr);
       }

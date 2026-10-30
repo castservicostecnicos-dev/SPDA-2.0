@@ -1459,8 +1459,8 @@ export const generatePdfBlob = async (
   // ==========================================
   onProgress?.(68, 'Gerando Vistorias Técnicas por Torre...');
 
-  const PHOTO_IMG_H = 41.5; // Altura otimizada para fotos nítidas 4:3
-  const CELL_H = 49.0;      // Altura da célula compacta (permite até 4 linhas = 16 fotos por página A4)
+  const PHOTO_IMG_H = 34.5; // Altura otimizada para fotos nítidas (permite até 5 linhas = 20 fotos por página A4)
+  const CELL_H = 41.5;      // Altura da célula compacta (permite até 5 linhas de 4 fotos sem deixar grandes espaços vazios)
   let curTowerY = 36;
   let isTowerSectionStarted = false;
 
@@ -1492,8 +1492,8 @@ export const generatePdfBlob = async (
 
     const towerTitle = `6.${gIdx + 1}) VISTORIA & ENSAIOS TÉCNICOS: ${group.towerName.toUpperCase()}`;
 
-    // Se a seção ainda não começou ou se não há espaço suficiente para o cabeçalho e pelo menos 1 linha de 4 fotos (57mm):
-    if (!isTowerSectionStarted || curTowerY + 57 > 274) {
+    // Se a seção ainda não começou ou se não há espaço suficiente para o cabeçalho e pelo menos 1 linha de 4 fotos (48mm):
+    if (!isTowerSectionStarted || curTowerY + 48 > 275) {
       startTowerPage(towerTitle);
       isTowerSectionStarted = true;
     } else {

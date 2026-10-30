@@ -113,7 +113,7 @@ const TOTAL_WIDTH_TWIPS = 9638;
 const MAX_DOCX_PRINTABLE_WIDTH_PT = 480; // 480 pt * 20 = 9600 twips <= 9638 twips (rigorosamente dentro das margens)
 const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips = 120.45 pt
 const PHOTO_GRID_WIDTH_PT = 109; // 38.5mm exatos a 72 pt/in (38.5 / 25.4 * 72 = 109.13 pt)
-const PHOTO_GRID_HEIGHT_PT = 136; // 48.0mm exatos a 72 pt/in (48.0 / 25.4 * 72 = 136.06 pt)
+const PHOTO_GRID_HEIGHT_PT = 98; // 34.5mm exatos a 72 pt/in (permite até 5 linhas = 20 fotos por página A4 no Word)
 
 const NO_BORDER = {
   style: BorderStyle.NONE,
@@ -1394,8 +1394,8 @@ export async function generateDocxBlob(
       return;
     }
 
-    // Quebra de página na primeira torre ou quando a página já tiver acumulado 12 ou mais fotos (3 a 4 linhas)
-    if (gIdx === 0 || docxPhotosRenderedSoFar >= 12) {
+    // Quebra de página na primeira torre ou quando a página já tiver acumulado 16 ou mais fotos (4 a 5 linhas)
+    if (gIdx === 0 || docxPhotosRenderedSoFar >= 16) {
       docChildren.push(new Paragraph({ children: [new PageBreak()] }));
       docxPhotosRenderedSoFar = 0;
     } else {
@@ -1411,7 +1411,7 @@ export async function generateDocxBlob(
     if (group.measurementPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.1) PONTOS DE ENSAIO DE CONTINUIDADE ÔHMICA (MILIOHMÍMETRO)`),
-        createPhotoGridTable(group.measurementPhotos, photoJpegMap, isMultiTower, true, 115)
+        createPhotoGridTable(group.measurementPhotos, photoJpegMap, isMultiTower, true, 98)
       );
       docxPhotosRenderedSoFar += group.measurementPhotos.length;
     }
@@ -1420,7 +1420,7 @@ export async function generateDocxBlob(
     if (group.spdaPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.2) VISTORIA DO SPDA EXISTENTE, CAPTORES & DESCIDAS`),
-        createPhotoGridTable(group.spdaPhotos, photoJpegMap, isMultiTower, false, 115)
+        createPhotoGridTable(group.spdaPhotos, photoJpegMap, isMultiTower, false, 98)
       );
       docxPhotosRenderedSoFar += group.spdaPhotos.length;
     }
@@ -1429,7 +1429,7 @@ export async function generateDocxBlob(
     if (group.quadrosPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.3) ANÁLISE DOS QUADROS DE ENERGIA & DPS (ABNT NBR 5410)`),
-        createPhotoGridTable(group.quadrosPhotos, photoJpegMap, isMultiTower, false, 115)
+        createPhotoGridTable(group.quadrosPhotos, photoJpegMap, isMultiTower, false, 98)
       );
       docxPhotosRenderedSoFar += group.quadrosPhotos.length;
     }
