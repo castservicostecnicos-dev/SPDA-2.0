@@ -51,6 +51,7 @@ import {
   getConnectedDeviceFolderHandle,
   pickAndConnectDeviceFolder,
 } from '../utils/photoDeviceSync';
+import { deleteSavedReportById } from '../utils/storage';
 
 interface DatabaseManagerModalProps {
   isOpen: boolean;
@@ -91,6 +92,7 @@ export const DatabaseManagerModal: React.FC<DatabaseManagerModalProps> = ({
   // Sincronização em lote de fotos pendentes
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState('');
+  const [deleteConfirmLaudoId, setDeleteConfirmLaudoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -230,12 +232,17 @@ export const DatabaseManagerModal: React.FC<DatabaseManagerModalProps> = ({
   // HANDLERS DE LAUDOS
   // =========================================================================
   const handleDeleteLaudo = async (id: string, title: string) => {
-    if (!confirm(`Deseja excluir o laudo "${title}" do banco de dados?`)) return;
+    // 1. Otimista imediato: remove na fração de segundo da tela
+    setLaudos((prev) => prev.filter((l) => l.id !== id));
+    setDeleteConfirmLaudoId(null);
+    showToast(`✓ Laudo "${title}" excluído definitivamente!`);
+
+    // 2. Executa a exclusão definitiva em todos os bancos
     try {
-      await deleteLaudoRecord(id);
+      await deleteSavedReportById(id);
       await loadAllData();
-      showToast(`Laudo "${title}" excluído do banco de dados!`);
     } catch (err: any) {
+      await loadAllData();
       showToast(err?.message || 'Erro ao excluir laudo.', 'error');
     }
   };
@@ -945,13 +952,34 @@ export const DatabaseManagerModal: React.FC<DatabaseManagerModalProps> = ({
                           <Edit className="w-3.5 h-3.5" />
                           <span>ABRIR LAUDO</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteLaudo(laudo.id, laudo.title)}
-                          className="p-1.5 bg-rose-950/40 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-800/40 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {deleteConfirmLaudoId === laudo.id ? (
+                          <div className="flex items-center gap-1.5 bg-rose-950/95 border border-rose-600/70 px-2.5 py-1 rounded-lg">
+                            <span className="text-[11px] font-bold text-rose-200 whitespace-nowrap">Excluir definitivamente?</span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteLaudo(laudo.id, laudo.title)}
+                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 text-white rounded text-[10px] font-bold cursor-pointer shadow-xs"
+                            >
+                              SIM, EXCLUIR
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmLaudoId(null)}
+                              className="px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-[10px] font-bold cursor-pointer"
+                            >
+                              CANCELAR
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmLaudoId(laudo.id)}
+                            className="p-1.5 bg-rose-950/40 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-800/40 rounded-lg transition-colors cursor-pointer"
+                            title="Excluir laudo definitivamente"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}

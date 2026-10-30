@@ -1764,12 +1764,10 @@ export default function App() {
         }}
         onReportDeleted={(deletedId) => {
           getSavedReportsList().then((list) => setSavedCount(list.length)).catch(() => {});
-          if (report.id === deletedId) {
-            setReport((prev) => ({
-              ...prev,
-              id: `laudo-spda-${Date.now()}`,
-              title: generateSequentialReportTitle(prev.client?.name),
-            }));
+          if (report.id === deletedId || deletedId === 'active_spda_report') {
+            const freshBlank = createBlankSpdaReport();
+            setReport(freshBlank);
+            clearReportStorage().catch(() => {});
           }
         }}
       />

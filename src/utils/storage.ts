@@ -333,15 +333,48 @@ export interface SavedReportMeta {
   photoCount: number;
 }
 
+const DELETED_REPORTS_BLACKLIST_KEY = 'spda_deleted_reports_blacklist';
+
+export function getDeletedReportIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_REPORTS_BLACKLIST_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function addDeletedReportId(id: string): void {
+  try {
+    if (!id) return;
+    const set = getDeletedReportIds();
+    set.add(id);
+    const arr = Array.from(set).slice(-200);
+    localStorage.setItem(DELETED_REPORTS_BLACKLIST_KEY, JSON.stringify(arr));
+  } catch {}
+}
+
+export function removeDeletedReportId(id: string): void {
+  try {
+    if (!id) return;
+    const set = getDeletedReportIds();
+    set.delete(id);
+    localStorage.setItem(DELETED_REPORTS_BLACKLIST_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
 /**
- * Retorna a lista de laudos salvos de forma resiliente e à prova de falhas:
+ * Retorna a lista de laudos salvos de forma resiliente, rápida e à prova de falhas:
  * 1. Escaneia o IndexedDB principal (chaves report_* e active_spda_report)
  * 2. Escaneia a tabela laudos do banco mestre relacional
  * 3. Recupera o índice do localStorage
- * Garante que NENHUM laudo criado pelo usuário seja perdido!
+ * 4. Exclui estritamente qualquer laudo que tenha sido deletado (blacklist)
  */
 export async function getSavedReportsList(): Promise<SavedReportMeta[]> {
   const map = new Map<string, SavedReportMeta>();
+  const deletedIds = getDeletedReportIds();
 
   // 1. Escaneia todas as chaves salvas no IndexedDB principal (spda_laudo_database)
   try {
@@ -390,18 +423,20 @@ export async function getSavedReportsList(): Promise<SavedReportMeta[]> {
 
             if (key.startsWith('report_')) {
               const id = key.replace(/^report_/, '');
-              map.set(id, {
-                id,
-                title: cleanTitle,
-                clientName,
-                clientLocal: rep.client?.local || '',
-                updatedAt: rep.lastSyncedAt ? new Date(rep.lastSyncedAt).toISOString() : new Date().toISOString(),
-                photoCount: totalPhotos,
-              });
+              if (!deletedIds.has(id)) {
+                map.set(id, {
+                  id,
+                  title: cleanTitle,
+                  clientName,
+                  clientLocal: rep.client?.local || '',
+                  updatedAt: rep.lastSyncedAt ? new Date(rep.lastSyncedAt).toISOString() : new Date().toISOString(),
+                  photoCount: totalPhotos,
+                });
+              }
             } else if (key === REPORT_KEY && hasUserContent(rep)) {
-              // Garante que o laudo ativo atual sempre apareça se tiver dados
+              // Garante que o laudo ativo atual sempre apareça se tiver dados e não estiver deletado
               const activeId = rep.id || 'active_spda_report';
-              if (!map.has(activeId)) {
+              if (!deletedIds.has(activeId) && !deletedIds.has('active_spda_report') && !map.has(activeId)) {
                 map.set(activeId, {
                   id: activeId,
                   title: `${cleanTitle} (Em Andamento)`,
@@ -430,7 +465,7 @@ export async function getSavedReportsList(): Promise<SavedReportMeta[]> {
     const masterLaudos = await getAllLaudos();
     if (masterLaudos && masterLaudos.length > 0) {
       masterLaudos.forEach((l) => {
-        if (l && l.id && !map.has(l.id)) {
+        if (l && l.id && !deletedIds.has(l.id) && !map.has(l.id)) {
           map.set(l.id, {
             id: l.id,
             title: l.title || `Laudo SPDA - ${l.condominioNome || l.clienteNome || 'Condomínio'}`,
@@ -452,7 +487,7 @@ export async function getSavedReportsList(): Promise<SavedReportMeta[]> {
     if (raw) {
       const list: SavedReportMeta[] = JSON.parse(raw);
       list.forEach((item) => {
-        if (item && item.id && !map.has(item.id)) {
+        if (item && item.id && !deletedIds.has(item.id) && !map.has(item.id)) {
           map.set(item.id, item);
         }
       });
@@ -554,6 +589,9 @@ export async function saveNamedReport(
     id: reportId,
     title: reportTitle,
   };
+
+  // Garante que o laudo salvo não fique em blacklist
+  removeDeletedReportId(reportId);
 
   // 1. Atualiza no IndexedDB a chave específica deste laudo
   await new Promise<void>((resolve, reject) => {
@@ -663,51 +701,104 @@ export async function loadSavedReportById(id: string): Promise<SpdaReport | null
 }
 
 export async function deleteSavedReportById(id: string): Promise<void> {
-  try {
-    const db = await openDatabase();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.delete(`report_${id}`);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
-  } catch (err) {
-    console.error('Erro ao deletar laudo do IndexedDB:', err);
-  }
+  if (!id) return;
 
-  // Remove também do banco mestre
-  deleteLaudoRecord(id).catch(() => {});
+  // 1. Blacklist instantâneo na memória e localStorage para impedir ressurreição imediata
+  addDeletedReportId(id);
 
+  // 2. Remove imediatamente do cache do localStorage para resposta em 0ms
   try {
-    const list = await getSavedReportsList();
-    const filtered = list.filter((item) => item.id !== id);
-    localStorage.setItem(SAVED_REPORTS_INDEX_KEY, JSON.stringify(filtered));
-  } catch (err) {
-    console.error('Erro ao atualizar lista no localStorage:', err);
-  }
+    const raw = localStorage.getItem(SAVED_REPORTS_INDEX_KEY);
+    if (raw) {
+      const list: SavedReportMeta[] = JSON.parse(raw);
+      const filtered = Array.isArray(list) ? list.filter((item) => item && item.id !== id) : [];
+      localStorage.setItem(SAVED_REPORTS_INDEX_KEY, JSON.stringify(filtered));
+    }
+    if (localStorage.getItem('spda_last_active_report_id') === id) {
+      localStorage.removeItem('spda_last_active_report_id');
+      localStorage.removeItem('spda_last_active_condo_name');
+    }
+  } catch {}
+
+  // 3. Executa a exclusão definitiva nos bancos em paralelo e aguarda confirmação
+  await Promise.allSettled([
+    // A) IndexedDB primário (spda_laudo_database)
+    (async () => {
+      try {
+        const db = await openDatabase();
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+
+          // Remove chave específica
+          store.delete(`report_${id}`);
+
+          // Se a chave ativa contiver o laudo excluído, remove da chave ativa
+          const activeReq = store.get(REPORT_KEY);
+          activeReq.onsuccess = () => {
+            const activeVal = activeReq.result as SpdaReport;
+            if (activeVal && (activeVal.id === id || id === 'active_spda_report')) {
+              store.delete(REPORT_KEY);
+            }
+          };
+
+          const backupReq = store.get(BACKUP_REPORT_KEY);
+          backupReq.onsuccess = () => {
+            const backupVal = backupReq.result as SpdaReport;
+            if (backupVal && (backupVal.id === id || id === 'active_spda_report')) {
+              store.delete(BACKUP_REPORT_KEY);
+            }
+          };
+
+          const emReq = store.get(EMERGENCY_RECOVERY_KEY);
+          emReq.onsuccess = () => {
+            const emVal = emReq.result as SpdaReport;
+            if (emVal && emVal.id === id) {
+              store.delete(EMERGENCY_RECOVERY_KEY);
+            }
+          };
+
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) {
+        console.warn('Erro ao deletar laudo do IndexedDB:', err);
+      }
+    })(),
+
+    // B) Banco mestre relacional (spda_master_db_v2 - laudo e fotos)
+    deleteLaudoRecord(id),
+  ]);
 }
 
 export async function deleteAllSavedReports(): Promise<void> {
   try {
     const list = await getSavedReportsList();
+    list.forEach((item) => addDeletedReportId(item.id));
+
     const db = await openDatabase();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       list.forEach((item) => {
         store.delete(`report_${item.id}`);
-        deleteLaudoRecord(item.id).catch(() => {});
       });
+      store.delete(REPORT_KEY);
+      store.delete(BACKUP_REPORT_KEY);
+      store.delete(EMERGENCY_RECOVERY_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+
+    await Promise.allSettled(list.map((item) => deleteLaudoRecord(item.id)));
   } catch (err) {
     console.error('Erro ao excluir todos os laudos do IndexedDB:', err);
   }
 
   try {
     localStorage.removeItem(SAVED_REPORTS_INDEX_KEY);
+    localStorage.removeItem('spda_last_active_report_id');
+    localStorage.removeItem('spda_last_active_condo_name');
   } catch (err) {
     console.error('Erro ao limpar índice no localStorage:', err);
   }
@@ -719,11 +810,22 @@ export async function deleteAllSavedReports(): Promise<void> {
 export async function clearReportStorage(): Promise<void> {
   try {
     const db = await openDatabase();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(REPORT_KEY);
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(REPORT_KEY);
+      store.delete(BACKUP_REPORT_KEY);
+      store.delete(EMERGENCY_RECOVERY_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
   } catch {
     // Ignora erro
   }
+  try {
+    localStorage.removeItem('spda_last_active_report_id');
+    localStorage.removeItem('spda_last_active_condo_name');
+  } catch {}
 }
 
 /**

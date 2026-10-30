@@ -157,16 +157,22 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
 
   const handleDelete = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // 1. OTIMISTA E INSTANTÂNEO: Remove da interface na mesma fração de segundo!
+    setReportsList((prev) => prev.filter((item) => item.id !== id));
+    setDeleteConfirmId(null);
+    setFeedback({ message: `✓ Laudo "${name}" excluído definitivamente!`, type: 'success' });
+    setTimeout(() => setFeedback(null), 3000);
+
+    // 2. Notifica imediatamente o App para resetar o editor se for o laudo ativo
+    onReportDeleted?.(id);
+
+    // 3. Executa a exclusão permanente nos bancos locais em segundo plano
     try {
       setIsDeleting(true);
       await deleteSavedReportById(id);
-      await loadList();
-      setDeleteConfirmId(null);
-      setFeedback({ message: `Laudo "${name}" excluído com sucesso!`, type: 'success' });
-      setTimeout(() => setFeedback(null), 3000);
-      onReportDeleted?.(id);
     } catch (err) {
       console.error(err);
+      await loadList();
       setFeedback({ message: 'Erro ao excluir o laudo.', type: 'error' });
     } finally {
       setIsDeleting(false);
