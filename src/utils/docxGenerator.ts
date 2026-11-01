@@ -112,8 +112,8 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
 const TOTAL_WIDTH_TWIPS = 9638;
 const MAX_DOCX_PRINTABLE_WIDTH_PT = 480; // 480 pt * 20 = 9600 twips <= 9638 twips (rigorosamente dentro das margens)
 const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips = 120.45 pt
-const PHOTO_GRID_WIDTH_PT = 109; // 38.5mm exatos a 72 pt/in (38.5 / 25.4 * 72 = 109.13 pt)
-const PHOTO_GRID_HEIGHT_PT = 98; // 34.5mm exatos a 72 pt/in (permite até 5 linhas = 20 fotos por página A4 no Word)
+const PHOTO_GRID_WIDTH_PT = 95; // 33.5mm exatos a 72 pt/in (formato 3:4 vertical)
+const PHOTO_GRID_HEIGHT_PT = 127; // 44.67mm exatos a 72 pt/in (formato 3:4 vertical: 95/127 ≈ 3/4)
 
 const NO_BORDER = {
   style: BorderStyle.NONE,
@@ -347,7 +347,7 @@ function createPhotoGridTable(
           cellChildren.push(
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              spacing: { before: 6, after: showMeasurement && p.measurementValue ? 6 : 30 },
+              spacing: { before: 6, after: showMeasurement && p.measurementValue ? 6 : 70 },
               children: [
                 new TextRun({
                   text: legendText,
@@ -366,7 +366,7 @@ function createPhotoGridTable(
           cellChildren.push(
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              spacing: { before: 0, after: 30 },
+              spacing: { before: 0, after: 70 },
               children: [
                 new TextRun({
                   text: `R = ${p.measurementValue} (Conforme)`,
@@ -383,7 +383,7 @@ function createPhotoGridTable(
         cells.push(
           new TableCell({
             width: { size: COL_WIDTH_4_TWIPS, type: WidthType.DXA },
-            margins: { top: 30, bottom: 30, left: 30, right: 30 },
+            margins: { top: 30, bottom: 70, left: 30, right: 30 },
             verticalAlign: VerticalAlign.TOP,
             borders: BORDER_NONE_OBJ,
             children: cellChildren,
@@ -693,9 +693,9 @@ export async function generateDocxBlob(
     signatureJpeg,
   ] = await Promise.all([
     Promise.all(localPhotos.map((p) => loadUncroppedPhoto(p.url))),
-    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 900, 1125, p.hasRedCircleMarker ?? true))),
-    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 900, 1125, false))),
-    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 900, 1125, p.hasRedCircleMarker ?? false))),
+    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, p.hasRedCircleMarker ?? true))),
+    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, false))),
+    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, p.hasRedCircleMarker ?? false))),
     loadUncroppedPhoto(report.equipmentPhotoUrl),
     processHeaderLogo(company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL, 45, 18, 192, 8.5),
     report.digitalSignature?.enabled && report.digitalSignature.imageUrl
@@ -1030,11 +1030,6 @@ export async function generateDocxBlob(
     docChildren.push(
       createSubheaderBanner('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)'),
       ...createDataListParagraphs(parametrosRows),
-      // Quebra para Página 4
-      new Paragraph({ children: [new PageBreak()] }),
-      // =========================================================================
-      // PÁGINA 4: FACHADA PRINCIPAL EM GRANDE DESTAQUE & 4) HISTÓRICO
-      // =========================================================================
       createSubheaderBanner('3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO')
     );
 
@@ -1420,7 +1415,7 @@ export async function generateDocxBlob(
     if (group.spdaPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.2) VISTORIA DO SPDA EXISTENTE, CAPTORES & DESCIDAS`),
-        createPhotoGridTable(group.spdaPhotos, photoJpegMap, isMultiTower, false, 98)
+        createPhotoGridTable(group.spdaPhotos, photoJpegMap, isMultiTower, false, PHOTO_GRID_HEIGHT_PT)
       );
       docxPhotosRenderedSoFar += group.spdaPhotos.length;
     }
@@ -1429,102 +1424,21 @@ export async function generateDocxBlob(
     if (group.quadrosPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.3) ANÁLISE DOS QUADROS DE ENERGIA & DPS (ABNT NBR 5410)`),
-        createPhotoGridTable(group.quadrosPhotos, photoJpegMap, isMultiTower, false, 98)
+        createPhotoGridTable(group.quadrosPhotos, photoJpegMap, isMultiTower, false, PHOTO_GRID_HEIGHT_PT)
       );
       docxPhotosRenderedSoFar += group.quadrosPhotos.length;
     }
   });
 
   // =========================================================================
-  // SEÇÃO 7: QUADRO RESUMO DE ADEQUAÇÕES POR TORRE (NÃO CONFORMIDADES NBR 5419:2026)
+  // PÁGINA FINAL: 7) RECOMENDAÇÕES PRIORITÁRIAS, 8) CONCLUSÃO & ASSINATURA DIGITAL
+  // Alocados em sequência contínua sem criar espaço vazio
   // =========================================================================
   docChildren.push(
     new Paragraph({ children: [new PageBreak()] }),
-    createSectionHeader('7) QUADRO RESUMO DE ADEQUAÇÕES POR TORRE (NÃO CONFORMIDADES NBR 5419:2026)'),
-    new Paragraph({
-      spacing: { before: 20, after: 60 },
-      children: [
-        new TextRun({
-          text: 'Quadro quantitativo consolidado das não conformidades identificadas nas vistorias de cada torre. A leitura analítica dos pontos críticos fundamenta as correções prioritárias obrigatórias perante as normas ABNT NBR 5419:2026 e ABNT NBR 5410.',
-          size: 15,
-          color: '334155',
-          font: 'Arial',
-        }),
-      ],
-    }),
-    createNonComplianceSummaryDocxTable(nonComplianceSummary),
-    new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
-    createSubheaderBanner('DETALHAMENTO DAS NÃO CONFORMIDADES IDENTIFICADAS POR TORRE:')
+    createSectionHeader('7) CORREÇÕES NECESSÁRIAS PARA PROTEÇÃO DAS EDIFICAÇÕES'),
+    createSubheaderBanner('Recomendações Técnicas Prioritárias (NBR 5419:2026)', AlignmentType.CENTER)
   );
-
-  const docxRowsWithItems = nonComplianceSummary.rows.filter((r) => r.items.length > 0);
-  if (docxRowsWithItems.length > 0) {
-    docxRowsWithItems.forEach((r) => {
-      docChildren.push(
-        new Paragraph({
-          spacing: { before: 40, after: 20 },
-          children: [
-            new TextRun({
-              text: `• ${r.towerName.toUpperCase()} (${r.total} ${r.total === 1 ? 'item apontado' : 'itens apontados'}):`,
-              bold: true,
-              size: 15,
-              color: '0F172A',
-              font: 'Arial',
-            }),
-          ],
-        })
-      );
-
-      r.items.forEach((item) => {
-        const badgeText = item.type === 'dps' ? '[FALTA DPS] ' : item.type === 'equipotential' ? '[EQUIPOTENCIAL] ' : '[ADEQUAÇÃO] ';
-        const badgeColor = item.type === 'dps' ? 'B91C1C' : item.type === 'equipotential' ? 'B45309' : '475569';
-
-        docChildren.push(
-          new Paragraph({
-            indent: { left: 240 },
-            spacing: { before: 10, after: 15 },
-            children: [
-              new TextRun({ text: badgeText, bold: true, size: 14, color: badgeColor, font: 'Arial' }),
-              new TextRun({ text: item.caption, size: 14, color: '334155', font: 'Arial' }),
-            ],
-          })
-        );
-      });
-    });
-  } else {
-    docChildren.push(
-      new Paragraph({
-        spacing: { before: 30, after: 30 },
-        children: [
-          new TextRun({
-            text: '✓ Nenhuma não conformidade crítica identificada nas legendas fotográficas avaliadas.',
-            bold: true,
-            size: 15,
-            color: '15803D',
-            font: 'Arial',
-          }),
-        ],
-      })
-    );
-  }
-
-  docChildren.push(
-    new Paragraph({ spacing: { before: 60, after: 0 }, children: [] }),
-    ...createHighlightBox(
-      'PARECER TÉCNICO SOBRE AS ADEQUAÇÕES APONTADAS:',
-      'Todas as irregularidades listadas acima devem ser sanadas prioritariamente por equipe de engenharia e eletricistas qualificados. A falta de equipotencialização compromete o escoamento seguro de descargas elétricas e eleva riscos de centelhamento (NBR 5419-3:2026), e a ausência de DPS deixa circuitos expostos a queimas catastróficas (NBR 5410).'
-    )
-  );
-
-  // Quebra para Página Final (Recomendações, Conclusão & Assinatura)
-  docChildren.push(new Paragraph({ children: [new PageBreak()] }));
-
-  // =========================================================================
-  // PÁGINA FINAL: RECOMENDAÇÕES PRIORITÁRIAS, CONCLUSÃO & ASSINATURA DIGITAL
-  // =========================================================================
-  docChildren.push(createSectionHeader('8) CORREÇÕES NECESSÁRIAS PARA PROTEÇÃO DAS EDIFICAÇÕES'));
-
-  docChildren.push(createSubheaderBanner('Recomendações Técnicas Prioritárias (NBR 5419:2026)', AlignmentType.CENTER));
 
   (texts.recomendacoes || []).forEach((rec, rIdx) => {
     docChildren.push(
@@ -1532,7 +1446,7 @@ export async function generateDocxBlob(
         spacing: { before: 20, after: 20 },
         children: [
           new TextRun({
-            text: `8.${rIdx + 1}- `,
+            text: `7.${rIdx + 1}- `,
             bold: true,
             size: 15,
             color: 'DC2626', // Vermelho oficial
@@ -1566,8 +1480,8 @@ export async function generateDocxBlob(
     );
   }
 
-  // 9) CONCLUSÃO TÉCNICA FINAL
-  docChildren.push(createSectionHeader('9) CONCLUSÃO FINAL DESTE RELATÓRIO TÉCNICO'));
+  // 8) CONCLUSÃO TÉCNICA FINAL
+  docChildren.push(createSectionHeader('8) CONCLUSÃO FINAL DESTE RELATÓRIO TÉCNICO'));
 
   if (texts.conclusaoFinal) {
     docChildren.push(

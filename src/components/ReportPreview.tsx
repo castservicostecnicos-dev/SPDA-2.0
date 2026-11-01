@@ -110,12 +110,32 @@ interface TowerInspectionPage {
 
 function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPage[] {
   const allPages: TowerInspectionPage[] = [];
-  const MAX_PER_PAGE = 20; // 5 linhas de 4 fotos por página A4 (até 20 fotos por página)
+  const MAX_ROWS_PER_PAGE = 5; // Limite de 5 linhas por página
+  const MAX_PAGE_CONTENT_MM = 248; // Limite vertical seguro preenchendo a página ao máximo sem sobrepor o rodapé
+  const ROW_HEIGHT_MM = 50.5;     // Altura de 1 linha de 4 fotos 3:4 vertical (44mm foto + legenda e espaçamento vertical)
+  const TOWER_HEADER_MM = 8.0;
+  const SUBSECTION_HEADER_MM = 6.0;
 
   let currentBlocks: TowerSectionBlock[] = [];
-  let countInPage = 0;
+  let rowsInPage = 0;
+  let currentHeightMm = TOWER_HEADER_MM;
   let currentPageTowerName = groups[0]?.towerName || 'Torre 1';
   let currentPageIsAreaComum = groups[0]?.isAreaComum || false;
+
+  const closeCurrentPage = () => {
+    if (currentBlocks.length > 0) {
+      allPages.push({
+        towerName: currentPageTowerName,
+        isAreaComum: currentPageIsAreaComum,
+        pageIndexInTower: allPages.length + 1,
+        totalTowerPages: 0,
+        blocks: currentBlocks,
+      });
+      currentBlocks = [];
+      rowsInPage = 0;
+      currentHeightMm = TOWER_HEADER_MM;
+    }
+  };
 
   groups.forEach((group) => {
     if (group.totalPhotos === 0 && groups.length > 1) return;
@@ -151,66 +171,53 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
     sections.forEach((sec) => {
       if (sec.photos.length === 0) return;
 
-      let remaining = [...sec.photos];
-      while (remaining.length > 0) {
-        const spaceLeft = MAX_PER_PAGE - countInPage;
-        // Se a página já possui fotos e não cabe pelo menos 1 linha de 4 fotos, inicia nova página
-        if (spaceLeft < 4 && countInPage > 0) {
-          allPages.push({
-            towerName: currentPageTowerName,
-            isAreaComum: currentPageIsAreaComum,
-            pageIndexInTower: allPages.length + 1,
-            totalTowerPages: 0,
-            blocks: currentBlocks,
-          });
-          currentBlocks = [];
-          countInPage = 0;
+      // Divide as fotos da subseção em linhas de até 4 fotos
+      const rows: PhotoSlot[][] = [];
+      for (let i = 0; i < sec.photos.length; i += 4) {
+        rows.push(sec.photos.slice(i, i + 4));
+      }
+
+      rows.forEach((rowPhotos) => {
+        const isNewTowerOnCurrentPage = isFirstBlockOfThisTower && currentBlocks.length > 0;
+        const isNewSubOnCurrentPage = currentBlocks.length === 0 || currentBlocks[currentBlocks.length - 1].title !== sec.title;
+
+        let neededHeight = ROW_HEIGHT_MM;
+        if (isNewTowerOnCurrentPage) {
+          neededHeight += TOWER_HEADER_MM + SUBSECTION_HEADER_MM;
+        } else if (isNewSubOnCurrentPage) {
+          neededHeight += SUBSECTION_HEADER_MM;
+        }
+
+        // Regra estrita: se as fotos forem sobrepor o rodapé/cabeçalho ou ultrapassar 5 linhas, diminui uma linha e passa para a próxima página
+        if (rowsInPage >= MAX_ROWS_PER_PAGE || (rowsInPage > 0 && currentHeightMm + neededHeight > MAX_PAGE_CONTENT_MM)) {
+          closeCurrentPage();
           currentPageTowerName = group.towerName;
           currentPageIsAreaComum = group.isAreaComum;
         }
 
-        const takeCount = Math.min(remaining.length, MAX_PER_PAGE - countInPage);
-        const slice = remaining.slice(0, takeCount);
-        remaining = remaining.slice(takeCount);
-
-        currentBlocks.push({
-          type: sec.type,
-          number: sec.number,
-          title: sec.title,
-          photos: slice,
-          towerName: group.towerName,
-          isNewTower: isFirstBlockOfThisTower,
-        });
+        // Adiciona ao bloco existente da mesma subseção ou cria novo bloco
+        const lastBlock = currentBlocks[currentBlocks.length - 1];
+        if (lastBlock && lastBlock.title === sec.title && lastBlock.towerName === group.towerName) {
+          lastBlock.photos.push(...rowPhotos);
+        } else {
+          currentBlocks.push({
+            type: sec.type,
+            number: sec.number,
+            title: sec.title,
+            photos: [...rowPhotos],
+            towerName: group.towerName,
+            isNewTower: isFirstBlockOfThisTower && currentBlocks.length > 0,
+          });
+        }
 
         isFirstBlockOfThisTower = false;
-        countInPage += slice.length;
-
-        if (countInPage >= MAX_PER_PAGE) {
-          allPages.push({
-            towerName: currentPageTowerName,
-            isAreaComum: currentPageIsAreaComum,
-            pageIndexInTower: allPages.length + 1,
-            totalTowerPages: 0,
-            blocks: currentBlocks,
-          });
-          currentBlocks = [];
-          countInPage = 0;
-          currentPageTowerName = group.towerName;
-          currentPageIsAreaComum = group.isAreaComum;
-        }
-      }
+        rowsInPage++;
+        currentHeightMm += neededHeight;
+      });
     });
   });
 
-  if (currentBlocks.length > 0) {
-    allPages.push({
-      towerName: currentPageTowerName,
-      isAreaComum: currentPageIsAreaComum,
-      pageIndexInTower: allPages.length + 1,
-      totalTowerPages: 0,
-      blocks: currentBlocks,
-    });
-  }
+  closeCurrentPage();
 
   allPages.forEach((p, idx) => {
     p.pageIndexInTower = idx + 1;
@@ -234,24 +241,20 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
 
   const aerialPhoto = localPhotos[0]?.url ? localPhotos[0] : null;
   const facadePhoto = localPhotos[1]?.url ? localPhotos[1] : null;
-  const hasBothLocalPhotos = Boolean(aerialPhoto && facadePhoto);
-  const localPageCount = hasBothLocalPhotos ? 2 : 1;
 
   // Total de Páginas:
   // 1: Capa
   // 2: 1) Introdução, Normas & 2) Dicionário (2 colunas)
-  // 3: 3) Características, Fotos do Local (em destaque próprio) & 4) Histórico
+  // 3: 3) Características, Fotos do Local & 4) Histórico
   // 4: 5) Instrumento de Medição Miliohmímetro & Metodologia
-  // 5+: Relatório de Vistoria e Ensaios por Torre (allTowerPages.length)
-  // Penúltima: 6) Quadro Resumo de Adequações por Torre (Não Conformidades NBR 5419:2026)
-  // Última: 7) Recomendações Prioritárias + Conclusão Final & Assinatura
+  // 5+: 6) Vistoria e Ensaios por Torre (allTowerPages.length)
+  // Final: 7) Recomendações Prioritárias + 8) Conclusão Final & Assinatura
   const totalPages =
     1 + // Capa
     1 + // Intro, Normas & Dicionário
-    localPageCount + // Características, Vista Aérea e Fachada & Histórico
+    1 + // Características, Fotos do Local & Histórico
     1 + // Instrumento de Medição Miliohmímetro
     allTowerPages.length + // Páginas de todas as torres agrupadas
-    1 + // Quadro Resumo de Adequações por Torre
     1; // Recomendações Prioritárias + Conclusão Final & Assinatura
 
   let currentPageNum = 1;
@@ -464,225 +467,143 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
       {/* ========================================================
           PÁGINA 3: 3) CARACTERÍSTICAS DA EDIFICAÇÃO & VISTA AÉREA (EM DESTAQUE)
           ======================================================== */}
-      {hasBothLocalPhotos ? (
-        <>
-          {/* PÁGINA 3: CARACTERÍSTICAS & SESSÃO DE VISTA AÉREA EM DESTAQUE */}
-          <ResponsivePage scale={scale} dataPage="3">
-            <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="3">
-              <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
-              <ReportHeader company={company} />
+      {/* ========================================================
+          PÁGINA 3: 3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL & 4) HISTÓRICO
+          Alocados em sequência contínua: ZERO ESPAÇO VAZIO
+          ======================================================== */}
+      <ResponsivePage scale={scale} dataPage="3">
+        <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="3">
+          <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
+          <ReportHeader company={company} />
 
-              <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2.5 text-justify font-sans">
-                <div>
-                  <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-1 font-sans">
-                    3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL
-                  </h2>
-                  {(() => {
-                    const desc = (client.descricaoBloco || texts.caracteristicasLocal || '').trim();
-                    if (!desc || /^(?:torre\s*\d+|torre\s*\/\s*estrutura|estrutura\s*\/\s*torre)$/i.test(desc)) return null;
-                    return (
-                      <p className="text-[9.5px] leading-relaxed mb-2 break-words">
-                        {desc}
-                      </p>
-                    );
-                  })()}
+          <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2 text-justify font-sans">
+            <div>
+              <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-1 font-sans">
+                3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL
+              </h2>
+              {(() => {
+                const desc = (client.descricaoBloco || texts.caracteristicasLocal || '').trim();
+                if (!desc || /^(?:torre\s*\d+|torre\s*\/\s*estrutura|estrutura\s*\/\s*torre)$/i.test(desc)) return null;
+                return (
+                  <p className="text-[9.5px] leading-relaxed mb-2 break-words">
+                    {desc}
+                  </p>
+                );
+              })()}
 
-                  {/* SESSÃO 3.1: VISTA AÉREA EM GRANDE DESTAQUE */}
-                  <div className="my-2 border border-slate-200 rounded-lg overflow-hidden bg-slate-50 p-2.5">
-                    <h3 className="text-[10px] font-bold text-slate-900 uppercase mb-1.5 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>
-                      3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE
+              {/* Registro Fotográfico do Local em Sequência Contínua */}
+              {aerialPhoto && facadePhoto ? (
+                <div className="my-2 grid grid-cols-2 gap-2.5">
+                  {/* Foto 1: Vista Aérea */}
+                  <div className="border border-slate-200 rounded-lg overflow-hidden bg-slate-50 p-2">
+                    <h3 className="text-[9px] font-bold text-slate-900 uppercase mb-1 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 inline-block" />
+                      3.1) VISTA AÉREA / SATÉLITE
                     </h3>
                     <div className="w-full flex items-center justify-center py-0.5">
                       <img
-                        src={aerialPhoto!.url}
-                        alt={aerialPhoto!.caption || 'Vista Aérea da Edificação'}
+                        src={aerialPhoto.url}
+                        alt={aerialPhoto.caption || 'Vista Aérea'}
                         loading="lazy"
                         decoding="async"
-                        className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
+                        className="max-w-full max-h-[135px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
                       />
                     </div>
-                    <p className="text-[8.5px] font-semibold text-slate-700 mt-1.5 text-center">
-                      {aerialPhoto!.caption?.trim() || 'Vista aérea da edificação, circunvizinhança e posicionamento geográfico do condomínio.'}
+                    <p className="text-[8px] font-semibold text-slate-700 mt-1 text-center truncate">
+                      {aerialPhoto.caption?.trim() || 'Vista aérea da circunvizinhança e posicionamento.'}
                     </p>
                   </div>
 
-                  {/* Quadro Técnico de Infraestrutura */}
-                  <div className="my-2 border border-slate-200 rounded overflow-hidden">
-                    <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
-                      PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)
+                  {/* Foto 2: Fachada */}
+                  <div className="border border-slate-200 rounded-lg overflow-hidden bg-slate-50 p-2">
+                    <h3 className="text-[9px] font-bold text-slate-900 uppercase mb-1 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" />
+                      3.2) FACHADA PRINCIPAL
+                    </h3>
+                    <div className="w-full flex items-center justify-center py-0.5">
+                      <img
+                        src={facadePhoto.url}
+                        alt={facadePhoto.caption || 'Fachada Principal'}
+                        loading="lazy"
+                        decoding="async"
+                        className="max-w-full max-h-[135px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
+                      />
                     </div>
-                    <div className="divide-y divide-slate-100 text-[8.5px]">
-                      <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
-                        <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Tipologia Construtiva:</span>
-                        <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Alvenaria Convencional / Estrutura em Concreto Armado</span>
-                      </div>
-                      <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
-                        <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Topografia & Entorno:</span>
-                        <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Terreno Urbano Plano com Edificações Vizinhas</span>
-                      </div>
-                      <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
-                        <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Nível de Proteção Dimensionado:</span>
-                        <span className="font-bold text-blue-700 text-right flex-shrink-0 max-w-[55%] break-words">Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)</span>
-                      </div>
-                      <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
-                        <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Métodos de Proteção Aplicáveis:</span>
-                        <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)</span>
-                      </div>
-                    </div>
+                    <p className="text-[8px] font-semibold text-slate-700 mt-1 text-center truncate">
+                      {facadePhoto.caption?.trim() || 'Fachada principal da edificação e acessos.'}
+                    </p>
                   </div>
                 </div>
-              </div>
-
-              <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
-            </div>
-          </ResponsivePage>
-
-          {/* PÁGINA 4: SESSÃO DE FACHADA PRINCIPAL EM DESTAQUE & HISTÓRICO */}
-          <ResponsivePage scale={scale} dataPage="4">
-            <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="4">
-              <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
-              <ReportHeader company={company} />
-
-              <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2.5 text-justify font-sans">
-                {/* SESSÃO 3.2: FACHADA EM GRANDE DESTAQUE */}
-                <div className="my-1 border border-slate-200 rounded-lg overflow-hidden bg-slate-50 p-2.5">
-                  <h3 className="text-[10px] font-bold text-slate-900 uppercase mb-1.5 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block"></span>
-                    3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO
+              ) : (aerialPhoto || facadePhoto) ? (
+                <div className="my-2 border border-slate-200 rounded-lg overflow-hidden bg-slate-50 p-2">
+                  <h3 className="text-[9.5px] font-bold text-slate-900 uppercase mb-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-600 inline-block" />
+                    {aerialPhoto ? '3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE' : '3.1) FACHADA PRINCIPAL DA EDIFICAÇÃO'}
                   </h3>
                   <div className="w-full flex items-center justify-center py-0.5">
                     <img
-                      src={facadePhoto!.url}
-                      alt={facadePhoto!.caption || 'Fachada Principal da Edificação'}
+                      src={(aerialPhoto || facadePhoto)!.url}
+                      alt={(aerialPhoto || facadePhoto)!.caption || 'Foto do Local'}
                       loading="lazy"
                       decoding="async"
-                      className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
+                      className="max-w-full max-h-[155px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
                     />
                   </div>
-                  <p className="text-[8.5px] font-semibold text-slate-700 mt-1.5 text-center">
-                    {facadePhoto!.caption?.trim() || 'Fachada principal da edificação, estrutura predial e acessos vistoriados.'}
+                  <p className="text-[8px] font-semibold text-slate-700 mt-1 text-center">
+                    {(aerialPhoto || facadePhoto)!.caption?.trim() || 'Foto do local e estrutura da edificação.'}
                   </p>
                 </div>
+              ) : null}
 
-                <p className="text-[9px] leading-relaxed pt-1 break-words">
-                  A edificação é de uso <span className="font-bold">{client.ramoAtividade}</span> com presença de ocupantes e equipamentos eletroeletrônicos e está localizada numa área de <span className="font-bold">{client.exposicaoNivel || 'baixa EXPOSIÇÃO'}</span> a descargas atmosféricas e seus efeitos indiretos.
-                </p>
-
-                {/* 4) Histórico de Problemas */}
-                <div className="border-t border-slate-200 pt-2">
-                  <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-1 font-sans">
-                    4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS
-                  </h2>
-                  <div className="space-y-1.5 text-[9px] leading-relaxed">
-                    <p className="break-words">
-                      <span className="font-bold">4.1-</span> Devido à localização e infraestrutura da edificação, constata-se: {client.historicoQueimaOcorrencias || '2 problemas de queima de equipamentos eletroeletrônicos'}.
-                    </p>
-                    <p className="break-words">
-                      <span className="font-bold">4.2-</span> A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.
-                    </p>
+              {/* Quadro Técnico de Infraestrutura */}
+              <div className="my-2 border border-slate-200 rounded overflow-hidden">
+                <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
+                  PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)
+                </div>
+                <div className="divide-y divide-slate-100 text-[8.5px]">
+                  <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
+                    <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Tipologia Construtiva:</span>
+                    <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Alvenaria Convencional / Estrutura em Concreto Armado</span>
+                  </div>
+                  <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
+                    <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Topografia & Entorno:</span>
+                    <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Terreno Urbano Plano com Edificações Vizinhas</span>
+                  </div>
+                  <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
+                    <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Nível de Proteção Dimensionado:</span>
+                    <span className="font-bold text-blue-700 text-right flex-shrink-0 max-w-[55%] break-words">Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)</span>
+                  </div>
+                  <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
+                    <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Métodos de Proteção Aplicáveis:</span>
+                    <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)</span>
                   </div>
                 </div>
               </div>
 
-              <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
-            </div>
-          </ResponsivePage>
-        </>
-      ) : (
-        /* Caso com 1 ou 0 fotos: Página 3 unificada elegante sem vazios */
-        <ResponsivePage scale={scale} dataPage="3">
-          <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="3">
-            <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
-            <ReportHeader company={company} />
-
-            <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2 text-justify font-sans">
-              <div>
-                <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-1 font-sans">
-                  3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL
-                </h2>
-                {(() => {
-                  const desc = (client.descricaoBloco || texts.caracteristicasLocal || '').trim();
-                  if (!desc || /^(?:torre\s*\d+|torre\s*\/\s*estrutura|estrutura\s*\/\s*torre)$/i.test(desc)) return null;
-                  return (
-                    <p className="text-[9.5px] leading-relaxed mb-2 break-words">
-                      {desc}
-                    </p>
-                  );
-                })()}
-
-                {(aerialPhoto || facadePhoto) ? (
-                  <div className="my-2 border border-slate-200 rounded-lg overflow-hidden bg-slate-50 p-2.5">
-                    <h3 className="text-[10px] font-bold text-slate-900 uppercase mb-1.5 flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full inline-block ${aerialPhoto ? 'bg-blue-600' : 'bg-emerald-600'}`} />
-                      {aerialPhoto ? '3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE' : '3.1) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO'}
-                    </h3>
-                    <div className="w-full flex items-center justify-center py-0.5">
-                      <img
-                        src={(aerialPhoto || facadePhoto)!.url}
-                        alt={(aerialPhoto || facadePhoto)!.caption || 'Foto do Local'}
-                        loading="lazy"
-                        decoding="async"
-                        className="max-w-full max-h-[220px] w-auto h-auto object-contain rounded border border-slate-300 shadow-xs"
-                      />
-                    </div>
-                    {((aerialPhoto || facadePhoto)!.caption?.trim()) && (
-                      <p className="text-[8.5px] font-semibold text-slate-700 mt-1.5 text-center">
-                        {(aerialPhoto || facadePhoto)!.caption.trim()}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="my-2 border border-slate-200 rounded overflow-hidden">
-                    <div className="bg-slate-100 px-3 py-1 font-bold text-[9px] text-slate-900 border-b border-slate-200">
-                      PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)
-                    </div>
-                    <div className="divide-y divide-slate-100 text-[8.5px]">
-                      <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
-                        <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Tipologia Construtiva:</span>
-                        <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Alvenaria Convencional / Estrutura em Concreto Armado</span>
-                      </div>
-                      <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
-                        <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Topografia & Entorno:</span>
-                        <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Terreno Urbano Plano com Edificações Vizinhas</span>
-                      </div>
-                      <div className="px-3 py-1 flex justify-between items-center gap-2 bg-white">
-                        <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Nível de Proteção Dimensionado:</span>
-                        <span className="font-bold text-blue-700 text-right flex-shrink-0 max-w-[55%] break-words">Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)</span>
-                      </div>
-                      <div className="px-3 py-1 flex justify-between items-center gap-2 bg-slate-50/50">
-                        <span className="font-semibold text-slate-800 flex-1 min-w-0 break-words">Métodos de Proteção Aplicáveis:</span>
-                        <span className="text-slate-600 text-right flex-shrink-0 max-w-[55%] break-words">Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <p className="text-[9px] leading-relaxed pt-1 break-words">
-                  A edificação é de uso <span className="font-bold">{client.ramoAtividade}</span> com presença de ocupantes e equipamentos eletroeletrônicos e está localizada numa área de <span className="font-bold">{client.exposicaoNivel || 'baixa EXPOSIÇÃO'}</span> a descargas atmosféricas e seus efeitos indiretos.
-                </p>
-              </div>
-
-              {/* 4) Histórico de Problemas */}
-              <div className="border-t border-slate-200 pt-2">
-                <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-1 font-sans">
-                  4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS
-                </h2>
-                <div className="space-y-1.5 text-[9px] leading-relaxed">
-                  <p className="break-words">
-                    <span className="font-bold">4.1-</span> Devido à localização e infraestrutura da edificação, constata-se: {client.historicoQueimaOcorrencias || '2 problemas de queima de equipamentos eletroeletrônicos'}.
-                  </p>
-                  <p className="break-words">
-                    <span className="font-bold">4.2-</span> A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.
-                  </p>
-                </div>
-              </div>
+              <p className="text-[9px] leading-relaxed pt-1 break-words">
+                A edificação é de uso <span className="font-bold">{client.ramoAtividade}</span> com presença de ocupantes e equipamentos eletroeletrônicos e está localizada numa área de <span className="font-bold">{client.exposicaoNivel || 'baixa EXPOSIÇÃO'}</span> a descargas atmosféricas e seus efeitos indiretos.
+              </p>
             </div>
 
-            <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
+            {/* 4) Histórico de Problemas */}
+            <div className="border-t border-slate-200 pt-2">
+              <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-1 font-sans">
+                4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS
+              </h2>
+              <div className="space-y-1.5 text-[9px] leading-relaxed">
+                <p className="break-words">
+                  <span className="font-bold">4.1-</span> Devido à localização e infraestrutura da edificação, constata-se: {client.historicoQueimaOcorrencias || '2 problemas de queima de equipamentos eletroeletrônicos'}.
+                </p>
+                <p className="break-words">
+                  <span className="font-bold">4.2-</span> A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.
+                </p>
+              </div>
+            </div>
           </div>
-        </ResponsivePage>
-      )}
+
+          <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
+        </div>
+      </ResponsivePage>
 
       {/* ========================================================
           PÁGINA: INSTRUMENTAÇÃO TÉCNICA E PARÂMETROS NORMATIVOS (NBR 5419:2026 / NBR 5410)
@@ -911,7 +832,7 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
                     {/* Grade de fotos (4 colunas) */}
                     {totalPhotosInBlock > 0 ? (
                       <div
-                        className="grid grid-cols-4 gap-x-[5.33mm] gap-y-[2mm] w-full"
+                        className="grid grid-cols-4 gap-x-[2.0mm] gap-y-[4.0mm] w-full"
                         style={{ width: '170mm' }}
                       >
                         {block.photos.map((photo, phIdx) => {
@@ -928,8 +849,10 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
                             <div
                               key={photo.id || phIdx}
                               className="flex flex-col items-center flex-shrink-0"
+                              style={{ width: '42mm' }}
                             >
-                              <div className="w-[38.5mm] h-[34.5mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
+                              {/* Container no formato 3:4 vertical (33mm x 44mm) com espaçamento vertical dobrado */}
+                              <div className="w-[33mm] h-[44mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
                                 <img
                                   src={photo.url}
                                   alt={cap || `Foto ${phIdx + 1}`}
@@ -940,13 +863,13 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
 
                                 {/* Badge de Alerta Não Conformidade quando identificado */}
                                 {isDpsFlag && (
-                                  <div className="absolute top-1 right-1 bg-red-600 text-white text-[6.5px] font-black px-1 py-0.2 rounded shadow z-10 tracking-wider">
+                                  <div className="absolute top-1 right-1 bg-red-600 text-white text-[5.5px] font-black px-1 py-0.2 rounded shadow z-10 tracking-wider">
                                     FALTA DPS
                                   </div>
                                 )}
                                 {isEquipFlag && !isDpsFlag && (
-                                  <div className="absolute top-1 right-1 bg-amber-600 text-white text-[6.5px] font-black px-1 py-0.2 rounded shadow z-10 tracking-wider">
-                                    EQUIPOTENCIALIZAR
+                                  <div className="absolute top-1 right-1 bg-amber-600 text-white text-[5.5px] font-black px-1 py-0.2 rounded shadow z-10 tracking-wider">
+                                    EQUIPOT.
                                   </div>
                                 )}
 
@@ -972,7 +895,7 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
 
                               {labelText && (
                                 <p
-                                  className={`text-[7.5px] font-bold text-center truncate mt-0.5 px-0.5 max-w-[38.5mm] leading-tight ${
+                                  className={`text-[7.5px] font-bold text-center truncate mt-0.5 px-0.5 max-w-[41mm] leading-tight ${
                                     isDpsFlag ? 'text-red-700' : isEquipFlag ? 'text-amber-700' : 'text-slate-800'
                                   }`}
                                   title={labelText}
@@ -1000,199 +923,8 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
       ))}
 
       {/* ========================================================
-          PÁGINA EXECUTIVA: QUADRO RESUMO DE ADEQUAÇÕES POR TORRE
-          CONTABILIZAÇÃO AUTOMÁTICA DE NÃO CONFORMIDADES:
-          - Pontos a equipotencializar
-          - Quadros que precisam de DPS
-          - Outras não conformidades
-          - Totais gerais do condomínio + exportação para Excel
-          ======================================================== */}
-      <ResponsivePage scale={scale} dataPage="resumo-nao-conformidades">
-        <div className="a4-page shadow-xl border border-gray-200 print:border-none print:shadow-none" data-page="resumo-nao-conformidades">
-          <ReportWatermark text={company.watermarkText} enabled={company.showWatermark} />
-          <ReportHeader company={company} />
-
-          <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2.5 font-sans">
-            <div>
-              <div className="flex items-center justify-between border-b border-slate-300 pb-1 mb-1">
-                <h2 className="text-[11.5px] font-bold text-slate-900 uppercase font-sans">
-                  6) QUADRO RESUMO DE ADEQUAÇÕES POR TORRE (NÃO CONFORMIDADES NBR 5419:2026)
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => exportNonConformitiesToExcelCsv(consolidated)}
-                  className="print:hidden text-[8px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded shadow flex items-center gap-1 transition-colors cursor-pointer"
-                  title="Baixar planilha Excel com o resumo quantitativo"
-                >
-                  <FileSpreadsheet className="w-3 h-3" />
-                  EXPORTAR EXCEL (.CSV)
-                </button>
-              </div>
-              <p className="text-[8.5px] text-slate-600 leading-snug text-justify">
-                Quadro quantitativo consolidado das não conformidades identificadas nas vistorias individuais de cada torre e área comum. A leitura analítica dos pontos críticos fundamenta as correções prioritárias obrigatórias perante as normas ABNT NBR 5419:2026 e ABNT NBR 5410.
-              </p>
-            </div>
-
-            {/* TABELA CONSOLIDADA DE NÃO CONFORMIDADES POR TORRE */}
-            <div className="border-2 border-slate-900 rounded overflow-hidden shadow-xs">
-              <table className="w-full text-left border-collapse text-[8.5px]">
-                <thead>
-                  <tr className="bg-slate-900 text-white text-[8.5px] font-bold uppercase tracking-wider">
-                    <th className="py-1.5 px-3 border-r border-slate-700">Torre / Bloco</th>
-                    <th className="py-1.5 px-2 text-center border-r border-slate-700">
-                      Pontos a Equipotencializar
-                    </th>
-                    <th className="py-1.5 px-2 text-center border-r border-slate-700">
-                      Quadros sem DPS (Instalar)
-                    </th>
-                    <th className="py-1.5 px-2 text-center border-r border-slate-700">
-                      Outras Adequações
-                    </th>
-                    <th className="py-1.5 px-2 text-center bg-slate-950 font-black">
-                      Total por Torre
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {nonComplianceSummary.rows.map((row, rIdx) => {
-                    const hasIssues = row.total > 0;
-                    return (
-                      <tr
-                        key={rIdx}
-                        className={
-                          rIdx % 2 === 0
-                            ? 'bg-white hover:bg-slate-50'
-                            : 'bg-slate-50/70 hover:bg-slate-100'
-                        }
-                      >
-                        <td className="py-1 px-3 font-bold text-slate-900 border-r border-slate-200">
-                          {row.towerName}
-                        </td>
-                        <td
-                          className={`py-1 px-2 text-center font-bold border-r border-slate-200 ${
-                            row.pointsNeedingEquipotentialization > 0
-                              ? 'text-amber-700 bg-amber-50/60 font-black'
-                              : 'text-slate-500 font-normal'
-                          }`}
-                        >
-                          {row.pointsNeedingEquipotentialization}
-                        </td>
-                        <td
-                          className={`py-1 px-2 text-center font-bold border-r border-slate-200 ${
-                            row.panelsNeedingDps > 0
-                              ? 'text-red-700 bg-red-50/60 font-black'
-                              : 'text-slate-500 font-normal'
-                          }`}
-                        >
-                          {row.panelsNeedingDps}
-                        </td>
-                        <td className="py-1 px-2 text-center text-slate-600 border-r border-slate-200">
-                          {row.otherNonCompliances}
-                        </td>
-                        <td
-                          className={`py-1 px-2 text-center font-black ${
-                            hasIssues ? 'text-red-800 bg-red-100/50' : 'text-emerald-700'
-                          }`}
-                        >
-                          {row.total}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-900 text-white font-black text-[9px] border-t-2 border-slate-950">
-                    <td className="py-2 px-3 uppercase tracking-wider">
-                      TOTAL GERAL DO CONDOMÍNIO
-                    </td>
-                    <td className="py-2 px-2 text-center font-black text-amber-300">
-                      {nonComplianceSummary.totalEquipotentialization}
-                    </td>
-                    <td className="py-2 px-2 text-center font-black text-red-300">
-                      {nonComplianceSummary.totalDpsMissing}
-                    </td>
-                    <td className="py-2 px-2 text-center font-bold text-slate-200">
-                      {nonComplianceSummary.totalOther}
-                    </td>
-                    <td className="py-2 px-2 text-center font-black text-amber-400 bg-black text-[9.5px]">
-                      {nonComplianceSummary.grandTotal}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {/* LISTA DETALHADA DE ITENS A CORRIGIR POR TORRE */}
-            <div className="space-y-1.5 pt-1">
-              <p className="text-[9.5px] font-bold text-slate-900 uppercase">
-                DETALHAMENTO DAS NÃO CONFORMIDADES IDENTIFICADAS POR TORRE:
-              </p>
-              {nonComplianceSummary.rows.some((r) => r.items.length > 0) ? (
-                <div className="grid grid-cols-2 gap-2 text-[8px]">
-                  {nonComplianceSummary.rows
-                    .filter((r) => r.items.length > 0)
-                    .map((r, idx) => (
-                      <div
-                        key={idx}
-                        className="border border-slate-200 bg-slate-50/80 rounded p-2 space-y-1"
-                      >
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-0.5">
-                          <span className="font-bold text-slate-900 uppercase">{r.towerName}</span>
-                          <span className="text-[7px] font-black px-1.5 py-0.2 rounded bg-red-100 text-red-700">
-                            {r.total} {r.total === 1 ? 'item' : 'itens'}
-                          </span>
-                        </div>
-                        <ul className="space-y-0.8 text-slate-700 leading-snug">
-                          {r.items.map((item, iIdx) => (
-                            <li key={iIdx} className="flex items-start gap-1">
-                              <span
-                                className={`text-[7px] font-bold px-1 rounded flex-shrink-0 ${
-                                  item.type === 'dps'
-                                    ? 'bg-red-200 text-red-900'
-                                    : item.type === 'equipotential'
-                                    ? 'bg-amber-200 text-amber-900'
-                                    : 'bg-slate-200 text-slate-800'
-                                }`}
-                              >
-                                {item.type === 'dps'
-                                  ? 'DPS'
-                                  : item.type === 'equipotential'
-                                  ? 'EQUIPOTENCIAL'
-                                  : 'OUTRO'}
-                              </span>
-                              <span className="break-words font-medium">{item.caption}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                <div className="border border-emerald-200 bg-emerald-50 rounded p-3 text-center text-emerald-800 text-[9px] font-bold">
-                  ✓ Nenhuma não conformidade crítica com falta de DPS ou equipotencialização foi apontada nas legendas das fotos desta vistoria.
-                </div>
-              )}
-            </div>
-
-            {/* Parecer de Ação Corretiva Imediata */}
-            <div className="bg-red-50 border border-red-200 rounded p-2 text-justify">
-              <p className="text-[8.5px] font-bold text-red-950 uppercase mb-0.5">
-                PARECER TÉCNICO SOBRE AS ADEQUAÇÕES APONTADAS:
-              </p>
-              <p className="text-[8px] text-red-900 leading-relaxed">
-                Todas as irregularidades listadas acima devem ser sanadas prioritariamente por equipe de engenharia e eletricistas qualificados. A falta de equipotencialização compromete o escoamento seguro de descargas elétricas e eleva riscos de centelhamentos perigosos (NBR 5419-3:2026), enquanto a ausência de DPS deixa os circuitos de baixa tensão e as edificações expostos a queimas catastróficas por sobretensões transitórias (NBR 5410).
-              </p>
-            </div>
-          </div>
-
-          <ReportFooter company={company} pageNumber={currentPageNum++} totalPages={totalPages} />
-        </div>
-      </ResponsivePage>
-
-
-      {/* ========================================================
-          PÁGINA FINAL UNIFICADA: 8) RECOMENDAÇÕES PRIORITÁRIAS,
-          9) CONCLUSÃO TÉCNICA FINAL, FECHAMENTO & ASSINATURA DO CREA
+          PÁGINA FINAL UNIFICADA: 7) RECOMENDAÇÕES PRIORITÁRIAS,
+          8) CONCLUSÃO TÉCNICA FINAL, FECHAMENTO & ASSINATURA DO CREA
           100% DENSO, COESO E COMPLETO! ZERO ESPAÇO VAZIO!
           ======================================================== */}
       <ResponsivePage scale={scale} dataPage="final">
@@ -1201,10 +933,10 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
           <ReportHeader company={company} />
 
           <div className="relative z-10 text-[9.5px] leading-[1.38] text-slate-800 space-y-2.5 font-sans">
-            {/* 8) Recomendações Prioritárias */}
+            {/* 7) Recomendações Prioritárias */}
             <div>
               <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-1 font-sans">
-                8) CORREÇÕES NECESSÁRIAS PARA PROTEÇÃO DAS EDIFICAÇÕES
+                7) CORREÇÕES NECESSÁRIAS PARA PROTEÇÃO DAS EDIFICAÇÕES
               </h2>
               <div className="bg-gray-200 py-0.8 px-3 text-center rounded-xs mb-1.5">
                 <span className="text-[9.5px] font-bold text-slate-900 font-sans">Recomendações Técnicas Prioritárias</span>
@@ -1213,7 +945,7 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
               <div className="space-y-1 text-[9px] text-[#dc2626] font-medium text-justify font-sans">
                 {texts.recomendacoes.map((rec, idx) => (
                   <p key={idx} className="leading-snug break-words">
-                    <span className="font-bold">8.{idx + 1}- </span>
+                    <span className="font-bold">7.{idx + 1}- </span>
                     {rec}
                   </p>
                 ))}
@@ -1224,10 +956,10 @@ function paginateTowerGroups(groups: TowerInspectionGroup[]): TowerInspectionPag
               </p>
             </div>
 
-            {/* 9) Conclusão Técnica Final */}
+            {/* 8) Conclusão Técnica Final */}
             <div className="border-t border-slate-200 pt-2">
               <h2 className="text-[11.5px] font-bold text-slate-900 uppercase mb-1 font-sans">
-                9) CONCLUSÃO FINAL DESTE RELATÓRIO TÉCNICO
+                8) CONCLUSÃO FINAL DESTE RELATÓRIO TÉCNICO
               </h2>
               <p className="text-[9px] text-justify leading-relaxed break-words">
                 {texts.conclusaoFinal}

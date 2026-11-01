@@ -254,8 +254,8 @@ export function calculateContainedDimensions(
  */
 export async function processPhotoForPdf(
   photo: PhotoSlot,
-  targetWidth = 900, // 38.5mm (~600 DPI para impressão ultra-nítida e sem granulação)
-  targetHeight = 1125, // 48.0mm
+  targetWidth = 1200, // Resolução gráfica em alta definição (formato 3:4 vertical)
+  targetHeight = 1600,
   allowCircle = true
 ): Promise<string> {
   if (!photo?.url) return '';
@@ -350,7 +350,7 @@ export async function processPhotoForPdf(
           ctx.restore();
         }
 
-        const out = canvas.toDataURL('image/jpeg', 0.95);
+        const out = canvas.toDataURL('image/jpeg', 0.96);
         disposeCanvas(canvas);
         img.src = '';
         resolve(out);
@@ -593,9 +593,9 @@ export const generatePdfBlob = async (
     headerLogoLayout,
   ] = await Promise.all([
     Promise.all(localPhotos.map((p) => loadUncroppedPhoto(p.url))),
-    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 770, 960, p.hasRedCircleMarker ?? true))),
-    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 770, 840, false))),
-    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 770, 840, p.hasRedCircleMarker ?? false))),
+    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, p.hasRedCircleMarker ?? true))),
+    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, false))),
+    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, p.hasRedCircleMarker ?? false))),
     loadUncroppedPhoto(equipmentPhotoUrl),
     processHeaderLogo(report.company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL),
   ]);
@@ -922,45 +922,63 @@ export const generatePdfBlob = async (
 
   if (validLocalInfos.length >= 2) {
     // -------------------------------------------------------------------------
-    // CASO COM VISTA AÉREA E FACHADA: CADA UMA EM SUA SESSÃO EM GRANDE DESTAQUE!
-    // Mantém a proporção nativa da foto sem cortar e sem redimensionar/esticar
+    // VISTA AÉREA E FACHADA LADO A LADO (EM 2 COLUNAS COESAS)
     // -------------------------------------------------------------------------
-    // 1. SESSÃO: VISTA AÉREA (NA PÁGINA 3)
+    const colW = (contentWidth - 6) / 2; // 82mm cada coluna
+    const photoMaxH = 52; // Altura harmoniosa que garante fluxo contínuo na página
+
+    // Cabeçalho Foto 1: Vista Aérea
     pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, locY, contentWidth, 6, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.2);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('3.1) VISTA AÉREA DA EDIFICAÇÃO / IMAGEM SATÉLITE', marginX + 4, locY + 4.2);
-    locY += 8;
-
-    // Foto da Vista Aérea na sua proporção nativa sem corte, estritamente limitada pela largura do documento
-    const aereaInfo = validLocalInfos[0];
-    const { width: photoWidth, height: photoHeight } = calculateContainedDimensions(
-      aereaInfo.aspect,
-      contentWidth, // 170mm máximo (largura útil entre margens laterais)
-      105 // altura máxima na página 3, permitindo que fotos em proporção paisagem preencham a largura total
-    );
-
-    const photoX = marginX + (contentWidth - photoWidth) / 2;
-    pdf.addImage(aereaInfo.dataUrl, aereaInfo.format, photoX, locY, photoWidth, photoHeight);
-    locY += photoHeight + 3.5;
-
-    // Legenda da Vista Aérea
-    const aereaCap = localPhotos[0]?.caption?.trim() || 'Vista aérea da edificação, circunvizinhança e posicionamento geográfico do condomínio.';
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.2);
-    pdf.setTextColor(51, 65, 85);
-    pdf.text(aereaCap, 105, locY, { align: 'center', maxWidth: photoWidth });
-    locY += 6;
-
-    // Parâmetros construtivos
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, locY, contentWidth, 5.5, 'F');
+    pdf.rect(marginX, locY, colW, 5.5, 'F');
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(7.5);
     pdf.setTextColor(15, 23, 42);
-    pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)', marginX + 4, locY + 3.8);
+    pdf.text('3.1) VISTA AÉREA / SATÉLITE', marginX + 3, locY + 3.8);
+
+    // Cabeçalho Foto 2: Fachada
+    pdf.setFillColor(241, 245, 249);
+    pdf.rect(marginX + colW + 6, locY, colW, 5.5, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('3.2) FACHADA PRINCIPAL', marginX + colW + 9, locY + 3.8);
+
+    locY += 7.5;
+
+    // Foto 1
+    const p1 = validLocalInfos[0];
+    const { width: w1, height: h1 } = calculateContainedDimensions(p1.aspect, colW, photoMaxH);
+    const x1 = marginX + (colW - w1) / 2;
+    const y1 = locY + (photoMaxH - h1) / 2;
+    pdf.addImage(p1.dataUrl, p1.format, x1, y1, w1, h1);
+
+    // Foto 2
+    const p2 = validLocalInfos[1];
+    const { width: w2, height: h2 } = calculateContainedDimensions(p2.aspect, colW, photoMaxH);
+    const x2 = marginX + colW + 6 + (colW - w2) / 2;
+    const y2 = locY + (photoMaxH - h2) / 2;
+    pdf.addImage(p2.dataUrl, p2.format, x2, y2, w2, h2);
+
+    locY += photoMaxH + 2.5;
+
+    // Legendas
+    const cap1 = localPhotos[0]?.caption?.trim() || 'Vista aérea da circunvizinhança e posicionamento geográfico.';
+    const cap2 = localPhotos[1]?.caption?.trim() || 'Fachada principal da edificação e acessos vistoriados.';
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(pdf.splitTextToSize(cap1, colW), marginX + colW / 2, locY, { align: 'center', maxWidth: colW });
+    pdf.text(pdf.splitTextToSize(cap2, colW), marginX + colW + 6 + colW / 2, locY, { align: 'center', maxWidth: colW });
+
+    locY += 8.5;
+
+    // Parâmetros construtivos em sequência contínua
+    pdf.setFillColor(241, 245, 249);
+    pdf.rect(marginX, locY, contentWidth, 5.2, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.2);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)', marginX + 4, locY + 3.6);
 
     const parametros = [
       { param: 'Tipologia Construtiva:', valor: 'Alvenaria Convencional / Estrutura em Concreto Armado' },
@@ -969,126 +987,64 @@ export const generatePdfBlob = async (
       { param: 'Métodos de Proteção Aplicáveis:', valor: 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)' },
     ];
 
-    let paramY = locY + 5.5;
+    let paramY = locY + 5.2;
     parametros.forEach((p, pIdx) => {
       if (pIdx % 2 === 0) {
         pdf.setFillColor(250, 250, 250);
-        pdf.rect(marginX, paramY, contentWidth, 5.0, 'F');
+        pdf.rect(marginX, paramY, contentWidth, 4.6, 'F');
       }
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.0);
+      pdf.setFontSize(6.8);
       pdf.setTextColor(30, 41, 59);
-      pdf.text(p.param, marginX + 3, paramY + 3.6);
+      pdf.text(p.param, marginX + 3, paramY + 3.3);
 
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7.0);
+      pdf.setFontSize(6.8);
       pdf.setTextColor(71, 85, 105);
-      pdf.text(p.valor, marginX + 55, paramY + 3.6, { maxWidth: contentWidth - 58 });
+      pdf.text(p.valor, marginX + 55, paramY + 3.3, { maxWidth: contentWidth - 58 });
 
       pdf.setDrawColor(226, 232, 240);
       pdf.setLineWidth(0.2);
-      pdf.line(marginX, paramY + 5.0, marginX + contentWidth, paramY + 5.0);
-      paramY += 5.0;
+      pdf.line(marginX, paramY + 4.6, marginX + contentWidth, paramY + 4.6);
+      paramY += 4.6;
     });
 
-    // PÁGINA 4: 2. SESSÃO: FACHADA PRINCIPAL EM GRANDE DESTAQUE & 4) HISTÓRICO
-    pdf.addPage('a4', 'portrait');
-    drawWatermark(pdf);
-    drawHeaderLogo(pdf);
-
-    let facY = 36;
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, facY, contentWidth, 6, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.2);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO / CONDOMÍNIO', marginX + 4, facY + 4.2);
-    facY += 8;
-
-    // Foto da Fachada na sua proporção nativa sem corte, estritamente limitada pela largura do documento
-    const facInfo = validLocalInfos[1];
-    const facMaxH = validLocalInfos[2] ? 85 : 110;
-    const { width: facWidth, height: facHeight } = calculateContainedDimensions(
-      facInfo.aspect,
-      contentWidth, // 170mm máximo
-      facMaxH // altura máxima proporcional na página 4
-    );
-
-    const facX = marginX + (contentWidth - facWidth) / 2;
-    pdf.addImage(facInfo.dataUrl, facInfo.format, facX, facY, facWidth, facHeight);
-    facY += facHeight + 3.5;
-
-    // Legenda da Fachada
-    const fachadaCap = localPhotos[1]?.caption?.trim() || 'Fachada principal da edificação, estrutura predial e acessos vistoriados.';
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.2);
-    pdf.setTextColor(51, 65, 85);
-    pdf.text(fachadaCap, 105, facY, { align: 'center', maxWidth: facWidth });
-    facY += 6;
-
-    // Foto de entrada se existir (3ª foto)
-    if (validLocalInfos[2]) {
-      pdf.setFillColor(241, 245, 249);
-      pdf.rect(marginX, facY, contentWidth, 5.5, 'F');
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.8);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('3.3) ENTRADA / ACESSO PRINCIPAL', marginX + 4, facY + 3.8);
-      facY += 7;
-
-      const p3 = validLocalInfos[2];
-      const { width: w3, height: h3 } = calculateContainedDimensions(
-        p3.aspect,
-        Math.min(150, contentWidth),
-        55
-      );
-      const x3 = marginX + (contentWidth - w3) / 2;
-      pdf.addImage(p3.dataUrl, p3.format, x3, facY, w3, h3);
-      facY += h3 + 3;
-
-      const entradaCap = localPhotos[2]?.caption?.trim() || 'Portaria e acesso principal à edificação.';
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7.0);
-      pdf.setTextColor(71, 85, 105);
-      pdf.text(entradaCap, 105, facY, { align: 'center', maxWidth: w3 });
-      facY += 5;
-    }
+    locY = paramY + 3;
 
     // Texto de Ramo de atividade e nível de exposição
     const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de moradores e equipamentos eletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.8);
+    pdf.setFontSize(7.4);
     pdf.setTextColor(30, 41, 59);
     const expLines = pdf.splitTextToSize(exposicaoText, contentWidth);
-    pdf.text(expLines, marginX, facY);
-    facY += expLines.length * 3.8 + 3;
+    pdf.text(expLines, marginX, locY);
+    locY += expLines.length * 3.6 + 3;
 
     // Linha sutil divisória
     pdf.setDrawColor(226, 232, 240);
     pdf.setLineWidth(0.3);
-    pdf.line(marginX, facY, marginX + contentWidth, facY);
-    facY += 4;
+    pdf.line(marginX, locY, marginX + contentWidth, locY);
+    locY += 4;
 
     // 4) HISTÓRICO DE PROBLEMAS
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10.5);
+    pdf.setFontSize(10.0);
     pdf.setTextColor(15, 23, 42);
-    pdf.text('4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS', marginX, facY);
+    pdf.text('4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS', marginX, locY);
 
-    facY += 5;
+    locY += 4.5;
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.8);
+    pdf.setFontSize(7.4);
     pdf.setTextColor(30, 41, 59);
 
     const hist1 = `4.1- Devido à localização e infraestrutura da edificação, constata-se: ${client.historicoQueimaOcorrencias || '2 problemas de queima de equipamentos eletroeletrônicos'}.`;
     const histLines1 = pdf.splitTextToSize(hist1, contentWidth);
-    pdf.text(histLines1, marginX, facY);
-    facY += histLines1.length * 3.8 + 2;
+    pdf.text(histLines1, marginX, locY);
+    locY += histLines1.length * 3.6 + 2;
 
     const hist2 = `4.2- A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.`;
     const histLines2 = pdf.splitTextToSize(hist2, contentWidth);
-    pdf.text(histLines2, marginX, facY);
-
+    pdf.text(histLines2, marginX, locY);
   } else if (validLocalInfos.length === 1) {
     // 1 foto do local em destaque na Página 3 na proporção nativa sem corte, estritamente limitada pela largura do documento
     pdf.setFillColor(241, 245, 249);
@@ -1444,25 +1400,38 @@ export const generatePdfBlob = async (
   pdf.setTextColor(180, 83, 9);
   const dpsText = 'Todos os quadros de distribuição (QGBTs, parciais e de comando) devem possuir Dispositivos de Proteção contra Surtos (DPS) coordenados tipo 1 e tipo 2 em pleno funcionamento. A ausência de DPS deixa circuitos e edificações vulneráveis a danos catastróficos.';
   pdf.text(pdf.splitTextToSize(dpsText, contentWidth - 8), marginX + 4, instY + 7.8);
+  instY += 16.5;
 
   // ==========================================
   // SEÇÃO 6: VISTORIA E ENSAIOS TÉCNICOS POR TORRE
   // ==========================================
-  // SEÇÃO 6: VISTORIA E ENSAIOS TÉCNICOS POR TORRE
   // FORMATO POR TORRE ("VÁRIOS LAUDOS DENTRO DE UM LAUDO GERAL"):
   // Para cada torre / bloco:
   //   1) Pontos de Inspeção (Continuidade Elétrica com Miliohmímetro)
   //   2) Vistoria do SPDA Existente & Captores
   //   3) Análise dos Quadros de Energia e DPS (NBR 5410)
-  // Ocupa rigorosamente até 4 fotos por linha e o máximo de linhas por página,
+  // Ocupa rigorosamente até 4 fotos por linha e até 5 linhas por página,
   // eliminando páginas semi-vazias e aproveitando 100% da área útil do A4.
   // ==========================================
   onProgress?.(68, 'Gerando Vistorias Técnicas por Torre...');
 
-  const PHOTO_IMG_H = 34.5; // Altura otimizada para fotos nítidas (permite até 5 linhas = 20 fotos por página A4)
-  const CELL_H = 41.5;      // Altura da célula compacta (permite até 5 linhas de 4 fotos sem deixar grandes espaços vazios)
+  const PHOTO_COLS = 4;
+  const PHOTO_WIDTH_MM = 33.0;  // Formato 3:4 vertical com espaçamento lateral reduzido (33.0mm)
+  const PHOTO_IMG_H = 44.0;     // Proporção estrita 3:4 vertical (33.0 * 4 / 3 = 44.0mm)
+  const ROW_STEP = 50.5;        // 44.0mm imagem + 6.5mm legenda e espaçamento
+  const FOOTER_SAFE_Y = 277.0;  // Linha do rodapé está em 281.0mm (margem de 4.0mm de segurança antes do rodapé)
+  const MAX_ROWS_PER_PAGE = 5;  // Limite de 5 linhas por página com preenchimento máximo
+
   let curTowerY = 36;
   let isTowerSectionStarted = false;
+  let rowsOnCurrentPage = 0;
+
+  // Aloca Seção 6 em sequência contínua se houver espaço na página anterior (sem deixar espaço vazio)
+  if (instY + 7.5 + 5.5 + PHOTO_IMG_H + 5.5 <= FOOTER_SAFE_Y) {
+    curTowerY = instY + 2.5;
+    isTowerSectionStarted = true;
+    rowsOnCurrentPage = 0;
+  }
 
   const startTowerPage = (titleStr: string) => {
     pdf.addPage('a4', 'portrait');
@@ -1477,6 +1446,7 @@ export const generatePdfBlob = async (
     pdf.text(titleStr, marginX + 4, 41.0);
 
     curTowerY = 46.5;
+    rowsOnCurrentPage = 0;
   };
 
   towerGroups.forEach((group, gIdx) => {
@@ -1492,20 +1462,24 @@ export const generatePdfBlob = async (
 
     const towerTitle = `6.${gIdx + 1}) VISTORIA & ENSAIOS TÉCNICOS: ${group.towerName.toUpperCase()}`;
 
-    // Se a seção ainda não começou ou se não há espaço suficiente para o cabeçalho e pelo menos 1 linha de 4 fotos (48mm):
-    if (!isTowerSectionStarted || curTowerY + 48 > 275) {
+    // Só inicia nova página se a seção não começou ou se o cabeçalho + 1 linha de fotos NÃO couberem
+    if (!isTowerSectionStarted) {
       startTowerPage(towerTitle);
       isTowerSectionStarted = true;
     } else {
-      // Inicia a torre na mesma página com divisor compacto, aproveitando as linhas livres
-      curTowerY += 2;
-      pdf.setFillColor(15, 23, 42);
-      pdf.roundedRect(marginX, curTowerY, contentWidth, 7.5, 1, 1, 'F');
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8.8);
-      pdf.setTextColor(255, 255, 255);
-      pdf.text(towerTitle, marginX + 4, curTowerY + 5.0);
-      curTowerY += 10.5;
+      if (rowsOnCurrentPage >= MAX_ROWS_PER_PAGE || curTowerY + 7.5 + 5.5 + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
+        startTowerPage(towerTitle);
+      } else {
+        // Inicia a torre na mesma página em sequência contínua, preenchendo o espaço disponível
+        curTowerY += 2;
+        pdf.setFillColor(15, 23, 42);
+        pdf.roundedRect(marginX, curTowerY, contentWidth, 7.5, 1, 1, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8.8);
+        pdf.setTextColor(255, 255, 255);
+        pdf.text(towerTitle, marginX + 4, curTowerY + 5.0);
+        curTowerY += 10.5;
+      }
     }
 
     // 3 subseções canônicas por torre
@@ -1539,8 +1513,8 @@ export const generatePdfBlob = async (
       // Pula subseções que não possuem fotos para NÃO deixar faixas ou espaços vazios
       if (sub.photos.length === 0) return;
 
-      // Se não couber o cabeçalho da subseção e pelo menos 1 linha de foto (CELL_H + 7 = 56mm), quebra a página
-      if (curTowerY + CELL_H + 6 > 275) {
+      // Só quebra a página se realmente não couber o título da subseção e a primeira linha de fotos
+      if (rowsOnCurrentPage >= MAX_ROWS_PER_PAGE || curTowerY + 5.5 + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
         startTowerPage(`${towerTitle} — ${sub.title} (CONTINUAÇÃO)`);
       }
 
@@ -1556,12 +1530,16 @@ export const generatePdfBlob = async (
       // Renderizar fotos em linhas de até 4 colunas preenchendo a página ao máximo
       const photoChunks = chunkArray(sub.photos, PHOTO_COLS);
       photoChunks.forEach((chunk) => {
-        if (curTowerY + CELL_H > 275) {
+        // Só quebra a página se a foto e sua legenda realmente forem ultrapassar a margem de segurança do rodapé
+        if (rowsOnCurrentPage >= MAX_ROWS_PER_PAGE || curTowerY + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
           startTowerPage(`${towerTitle} — ${sub.title} (CONTINUAÇÃO)`);
         }
 
         chunk.forEach((p, cIdx) => {
-          const x = marginX + cIdx * (PHOTO_WIDTH_MM + PHOTO_GAP_X_MM);
+          const colSlot = contentWidth / PHOTO_COLS; // 42.5 mm por coluna
+          const colLeft = marginX + cIdx * colSlot;
+          const colCenter = colLeft + colSlot / 2;
+          const x = colLeft + (colSlot - PHOTO_WIDTH_MM) / 2;
           const y = curTowerY;
           const imgData = photoJpegMap.get(p.id || p.url) || p.url;
 
@@ -1582,258 +1560,69 @@ export const generatePdfBlob = async (
           const isFaltaDps = /falta\s*dps|sem\s*dps|instalar\s*dps|aus[eê]ncia\s*de\s*dps/i.test(capLower);
           const isFaltaEquipot = /falta\s*equipot|n[aã]o\s*equipot|equipotencializar|precisa\s*equipot/i.test(capLower);
 
-          let labelY = y + PHOTO_IMG_H + 2.5;
+          let labelY = y + PHOTO_IMG_H + 1.8;
 
           if (isFaltaDps) {
             pdf.setFillColor(254, 226, 226);
-            pdf.roundedRect(x + 1, labelY - 2.0, PHOTO_WIDTH_MM - 2, 3.0, 0.4, 0.4, 'F');
+            pdf.roundedRect(colLeft + 2, labelY - 1.6, colSlot - 4, 2.8, 0.4, 0.4, 'F');
             pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(5.2);
+            pdf.setFontSize(5.0);
             pdf.setTextColor(185, 28, 28);
-            pdf.text('⚠ FALTA DPS', x + PHOTO_WIDTH_MM / 2, labelY + 0.2, { align: 'center' });
-            labelY += 3.3;
+            pdf.text('⚠ FALTA DPS', colCenter, labelY + 0.3, { align: 'center' });
+            labelY += 3.2;
           } else if (isFaltaEquipot) {
             pdf.setFillColor(254, 243, 199);
-            pdf.roundedRect(x + 1, labelY - 2.0, PHOTO_WIDTH_MM - 2, 3.0, 0.4, 0.4, 'F');
+            pdf.roundedRect(colLeft + 2, labelY - 1.6, colSlot - 4, 2.8, 0.4, 0.4, 'F');
             pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(5.2);
+            pdf.setFontSize(5.0);
             pdf.setTextColor(180, 83, 9);
-            pdf.text('⚠ FALTA EQUIPOTENCIALIZAR', x + PHOTO_WIDTH_MM / 2, labelY + 0.2, { align: 'center' });
-            labelY += 3.3;
+            pdf.text('⚠ FALTA EQUIPOTENCIALIZAR', colCenter, labelY + 0.3, { align: 'center' });
+            labelY += 3.2;
           }
 
           // Texto descritivo
           pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(6.0);
+          pdf.setFontSize(5.8);
           pdf.setTextColor(15, 23, 42);
           const fullDesc = [cap || 'Registro de inspeção', val ? `(${val})` : ''].filter(Boolean).join(' ');
-          const splitLines = pdf.splitTextToSize(fullDesc, PHOTO_WIDTH_MM);
-          pdf.text(splitLines.slice(0, 2), x + PHOTO_WIDTH_MM / 2, labelY, {
+          const splitLines = pdf.splitTextToSize(fullDesc, colSlot - 2);
+          pdf.text(splitLines.slice(0, 2), colCenter, labelY, {
             align: 'center',
-            maxWidth: PHOTO_WIDTH_MM,
+            maxWidth: colSlot - 2,
           });
         });
 
-        curTowerY += CELL_H + 1.2;
+        curTowerY += ROW_STEP;
+        rowsOnCurrentPage++;
       });
 
       curTowerY += 1.5;
     });
   });
 
-  // ==========================================================
-  // PÁGINA EXECUTIVA: QUADRO RESUMO DE ADEQUAÇÕES POR TORRE
-  // CONTABILIZAÇÃO AUTOMÁTICA DE NÃO CONFORMIDADES:
-  // - Pontos a equipotencializar
-  // - Quadros que precisam de DPS
-  // - Outras não conformidades
-  // - Totais por torre e TOTAL GERAL DO CONDOMÍNIO
-  // ==========================================================
-  onProgress?.(88, 'Gerando Quadro Resumo de Não Conformidades por Torre...');
-  pdf.addPage('a4', 'portrait');
-  drawWatermark(pdf);
-  drawHeaderLogo(pdf);
+  // ==========================================
+  // PÁGINA FINAL UNIFICADA: 7) RECOMENDAÇÕES PRIORITÁRIAS,
+  // 8) CONCLUSÃO TÉCNICA FINAL, FECHAMENTO & ASSINATURA DO CREA
+  // Alocados em sequência contínua sem criar espaço vazio
+  // ==========================================
+  onProgress?.(94, 'Gerando Recomendações Técnicas, Conclusão & Assinatura...');
 
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(10.5);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text('7) QUADRO RESUMO DE ADEQUAÇÕES POR TORRE (NÃO CONFORMIDADES NBR 5419:2026)', marginX, 36);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.2);
-  pdf.setTextColor(71, 85, 105);
-  const resumoIntro = 'Quadro quantitativo consolidado das não conformidades identificadas nas vistorias de cada torre. A leitura analítica dos pontos críticos fundamenta as correções prioritárias obrigatórias perante as normas ABNT NBR 5419:2026 e ABNT NBR 5410.';
-  pdf.text(pdf.splitTextToSize(resumoIntro, contentWidth), marginX, 41.5);
-
-  const nonComplianceSummary = analyzeTowerNonConformities(consolidatedReport);
-  let tblY = 49;
-
-  // Cabeçalho da Tabela
-  pdf.setFillColor(15, 23, 42);
-  pdf.rect(marginX, tblY, contentWidth, 7, 'F');
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7.0);
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('TORRE / BLOCO', marginX + 3, tblY + 4.8);
-  pdf.text('PONTOS A EQUIPOTENCIALIZAR', marginX + 60, tblY + 4.8, { align: 'center' });
-  pdf.text('QUADROS SEM DPS (INSTALAR)', marginX + 105, tblY + 4.8, { align: 'center' });
-  pdf.text('OUTRAS ADEQUAÇÕES', marginX + 138, tblY + 4.8, { align: 'center' });
-  pdf.text('TOTAL POR TORRE', marginX + contentWidth - 3, tblY + 4.8, { align: 'right' });
-
-  tblY += 7;
-
-  // Linhas por Torre
-  nonComplianceSummary.rows.forEach((row, rIdx) => {
-    if (rIdx % 2 === 0) {
-      pdf.setFillColor(255, 255, 255);
-    } else {
-      pdf.setFillColor(248, 250, 252);
-    }
-    pdf.rect(marginX, tblY, contentWidth, 6.0, 'F');
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.2);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(row.towerName, marginX + 3, tblY + 4.2);
-
-    // Pontos a equipotencializar
-    if (row.pointsNeedingEquipotentialization > 0) {
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(180, 83, 9);
-      pdf.setFillColor(254, 243, 199);
-      pdf.roundedRect(marginX + 53, tblY + 1.2, 14, 3.8, 0.5, 0.5, 'F');
-    } else {
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(100, 116, 139);
-    }
-    pdf.text(String(row.pointsNeedingEquipotentialization), marginX + 60, tblY + 4.2, { align: 'center' });
-
-    // Quadros sem DPS
-    if (row.panelsNeedingDps > 0) {
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(185, 28, 28);
-      pdf.setFillColor(254, 226, 226);
-      pdf.roundedRect(marginX + 98, tblY + 1.2, 14, 3.8, 0.5, 0.5, 'F');
-    } else {
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(100, 116, 139);
-    }
-    pdf.text(String(row.panelsNeedingDps), marginX + 105, tblY + 4.2, { align: 'center' });
-
-    // Outras adequações
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(71, 85, 105);
-    pdf.text(String(row.otherNonCompliances), marginX + 138, tblY + 4.2, { align: 'center' });
-
-    // Total por torre
-    pdf.setFont('helvetica', 'bold');
-    if (row.total > 0) {
-      pdf.setTextColor(185, 28, 28);
-    } else {
-      pdf.setTextColor(22, 101, 52);
-    }
-    pdf.text(String(row.total), marginX + contentWidth - 4, tblY + 4.2, { align: 'right' });
-
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setLineWidth(0.2);
-    pdf.line(marginX, tblY + 6.0, marginX + contentWidth, tblY + 6.0);
-    tblY += 6.0;
-  });
-
-  // Linha de Rodapé: TOTAL GERAL DO CONDOMÍNIO
-  pdf.setFillColor(15, 23, 42);
-  pdf.rect(marginX, tblY, contentWidth, 7.5, 'F');
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('TOTAL GERAL DO CONDOMÍNIO', marginX + 3, tblY + 5.0);
-
-  pdf.setTextColor(252, 211, 77); // Amarelo
-  pdf.text(String(nonComplianceSummary.totalEquipotentialization), marginX + 60, tblY + 5.0, { align: 'center' });
-
-  pdf.setTextColor(252, 165, 165); // Vermelho
-  pdf.text(String(nonComplianceSummary.totalDpsMissing), marginX + 105, tblY + 5.0, { align: 'center' });
-
-  pdf.setTextColor(226, 232, 240);
-  pdf.text(String(nonComplianceSummary.totalOther), marginX + 138, tblY + 5.0, { align: 'center' });
-
-  pdf.setFontSize(8.2);
-  pdf.setTextColor(255, 255, 255);
-  pdf.text(String(nonComplianceSummary.grandTotal), marginX + contentWidth - 4, tblY + 5.0, { align: 'right' });
-
-  tblY += 12;
-
-  // Detalhamento das Não Conformidades por Torre
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7.8);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text('DETALHAMENTO DAS NÃO CONFORMIDADES IDENTIFICADAS POR TORRE:', marginX, tblY);
-  tblY += 4.5;
-
-  const rowsWithItems = nonComplianceSummary.rows.filter((r) => r.items.length > 0);
-
-  if (rowsWithItems.length > 0) {
-    rowsWithItems.forEach((r) => {
-      if (tblY > 240) return; // Proteção contra overflow de página
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.0);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(`• ${r.towerName.toUpperCase()} (${r.total} ${r.total === 1 ? 'item' : 'itens'}):`, marginX + 2, tblY);
-      tblY += 3.8;
-
-      r.items.slice(0, 5).forEach((item) => {
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(6.2);
-        if (item.type === 'dps') {
-          pdf.setTextColor(185, 28, 28);
-          pdf.text('[FALTA DPS]', marginX + 6, tblY);
-        } else if (item.type === 'equipotential') {
-          pdf.setTextColor(180, 83, 9);
-          pdf.text('[EQUIPOTENCIAL]', marginX + 6, tblY);
-        } else {
-          pdf.setTextColor(71, 85, 105);
-          pdf.text('[ADEQUAÇÃO]', marginX + 6, tblY);
-        }
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(51, 65, 85);
-        pdf.text(item.caption, marginX + 28, tblY, { maxWidth: contentWidth - 30 });
-        tblY += 3.5;
-      });
-      tblY += 1.5;
-    });
+  let finalY: number;
+  if (curTowerY + 115 <= FOOTER_SAFE_Y && rowsOnCurrentPage <= 2) {
+    // Se a última torre terminou no início/meio da página e sobra espaço, aloca em sequência contínua
+    finalY = curTowerY + 6;
   } else {
-    pdf.setFillColor(240, 253, 244);
-    pdf.setDrawColor(34, 197, 94);
-    pdf.setLineWidth(0.3);
-    pdf.roundedRect(marginX, tblY, contentWidth, 14, 1, 1, 'FD');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(22, 101, 52);
-    pdf.text('✓ NENHUMA NÃO CONFORMIDADE CRÍTICA APONTADA NAS LEGENDAS', marginX + 4, tblY + 5.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(6.8);
-    pdf.text('Todas as legendas e ensaios avaliados estão em plena conformidade com as diretrizes normativas.', marginX + 4, tblY + 9.5);
-    tblY += 17;
+    pdf.addPage('a4', 'portrait');
+    drawWatermark(pdf);
+    drawHeaderLogo(pdf);
+    finalY = 36;
   }
 
-  // Parecer de Ação Corretiva Imediata
-  if (tblY <= 245) {
-    pdf.setFillColor(254, 242, 242);
-    pdf.setDrawColor(239, 68, 68);
-    pdf.setLineWidth(0.3);
-    pdf.roundedRect(marginX, tblY + 2, contentWidth, 16, 1, 1, 'FD');
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.0);
-    pdf.setTextColor(153, 27, 27);
-    pdf.text('PARECER TÉCNICO SOBRE AS ADEQUAÇÕES APONTADAS:', marginX + 4, tblY + 6.5);
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(6.4);
-    pdf.setTextColor(185, 28, 28);
-    const avisoParecer = 'Todas as irregularidades listadas acima devem ser sanadas prioritariamente por equipe de engenharia e eletricistas qualificados. A falta de equipotencialização compromete o escoamento seguro de descargas elétricas e eleva riscos de centelhamento (NBR 5419-3:2026), e a ausência de DPS deixa circuitos expostos a queimas catastróficas (NBR 5410).';
-    pdf.text(pdf.splitTextToSize(avisoParecer, contentWidth - 8), marginX + 4, tblY + 10.5);
-  }
-
-  // ==========================================
-  // PÁGINA FINAL UNIFICADA: 8) RECOMENDAÇÕES PRIORITÁRIAS,
-  // 9) CONCLUSÃO TÉCNICA FINAL, FECHAMENTO & ASSINATURA DO CREA
-  // 100% DENSO, COMPLETO E COESO! ZERO ESPAÇO VAZIO!
-  // ==========================================
-  onProgress?.(94, 'Gerando Página Final: Parecer Técnico & Assinatura...');
-  pdf.addPage('a4', 'portrait');
-  drawWatermark(pdf);
-  drawHeaderLogo(pdf);
-
-  let finalY = 36;
-
-  // 8) CORREÇÕES NECESSÁRIAS (RECOMENDAÇÕES)
+  // 7) CORREÇÕES NECESSÁRIAS (RECOMENDAÇÕES)
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(10.5);
   pdf.setTextColor(15, 23, 42);
-  pdf.text('8) CORREÇÕES NECESSÁRIAS PARA PROTEÇÃO DAS EDIFICAÇÕES', marginX, finalY);
+  pdf.text('7) CORREÇÕES NECESSÁRIAS PARA PROTEÇÃO DAS EDIFICAÇÕES', marginX, finalY);
 
   finalY += 4.5;
   pdf.setFillColor(229, 231, 235);
@@ -1848,7 +1637,7 @@ export const generatePdfBlob = async (
   pdf.setFontSize(7.5);
   texts.recomendacoes.forEach((rec, idx) => {
     pdf.setFont('helvetica', 'bold');
-    pdf.text(`8.${idx + 1}- `, marginX, finalY);
+    pdf.text(`7.${idx + 1}- `, marginX, finalY);
     pdf.setFont('helvetica', 'normal');
     const recLines = pdf.splitTextToSize(rec, contentWidth - 12);
     pdf.text(recLines, marginX + 8, finalY);
@@ -1869,11 +1658,11 @@ export const generatePdfBlob = async (
   pdf.line(marginX, finalY, marginX + contentWidth, finalY);
   finalY += 6;
 
-  // 9) CONCLUSÃO FINAL DESTE RELATÓRIO
+  // 8) CONCLUSÃO FINAL DESTE RELATÓRIO
   pdf.setTextColor(15, 23, 42);
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(10.5);
-  pdf.text('9) CONCLUSÃO FINAL DESTE RELATÓRIO TÉCNICO', marginX, finalY);
+  pdf.text('8) CONCLUSÃO FINAL DESTE RELATÓRIO TÉCNICO', marginX, finalY);
 
   finalY += 5;
   pdf.setFont('helvetica', 'normal');
