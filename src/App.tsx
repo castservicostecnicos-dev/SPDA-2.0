@@ -112,14 +112,10 @@ export default function App() {
   } | null>(null);
 
   const handleSaveSignature = (sig: DigitalSignatureData) => {
-    setReport((prev) => {
-      const updated = {
-        ...prev,
-        digitalSignature: sig,
-      };
-      saveReportToStorage(updated).catch(() => {});
-      return updated;
-    });
+    setReport((prev) => ({
+      ...prev,
+      digitalSignature: sig,
+    }));
     setSaveToast(sig.enabled ? '✓ Assinatura digital aplicada ao laudo!' : 'Assinatura digital desativada.');
     setTimeout(() => setSaveToast(null), 3500);
   };
@@ -136,14 +132,12 @@ export default function App() {
         torresNomes: condo.torresNomes && condo.torresNomes.length > 0 ? condo.torresNomes : prev.client.torresNomes,
       };
       const title = generateSequentialReportTitle(condo.nome);
-      const updated = {
+      return {
         ...prev,
         title,
         client: updatedClient,
         torreAtual: condo.torresNomes?.[0] || 'Torre 1',
       };
-      saveReportToStorage(updated).catch(() => {});
-      return updated;
     });
     setSaveToast(`✓ Condomínio "${condo.nome}" carregado no laudo!`);
     setTimeout(() => setSaveToast(null), 4000);
@@ -163,9 +157,7 @@ export default function App() {
         crea: clientRec.crea || prev.client.crea,
         art: clientRec.art || prev.client.art,
       };
-      const updated = { ...prev, client: updatedClient };
-      saveReportToStorage(updated).catch(() => {});
-      return updated;
+      return { ...prev, client: updatedClient };
     });
     setSaveToast(`✓ Dados do cliente "${clientRec.name}" aplicados no laudo!`);
     setTimeout(() => setSaveToast(null), 4000);
@@ -234,19 +226,27 @@ export default function App() {
   const parsedNewReportTowerCount = Math.max(1, Math.min(50, parseInt(newReportTowerCountInput, 10) || 1));
 
   // Salvamento contínuo e automático contra falhas e travamentos do aparelho:
-  // Grava no IndexedDB de forma leve e assíncrona com debounce de 2.5s
+  // Grava no IndexedDB de forma leve e assíncrona com debounce de 2.5s protegido contra concorrência
+  const isSavingRef = React.useRef(false);
+
   useEffect(() => {
     if (!isStorageReady) return;
     setHasUnsavedChanges(true);
 
-    const timer = setTimeout(() => {
-      saveReportToStorage(report, { fullSync: false })
-        .then(() => {
-          const now = new Date();
-          const pad = (n: number) => String(n).padStart(2, '0');
-          setLastSavedTime(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
-        })
-        .catch((err) => console.warn('Auto-save notice:', err));
+    const timer = setTimeout(async () => {
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
+      try {
+        await saveReportToStorage(report, { fullSync: false });
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        setLastSavedTime(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
+        setHasUnsavedChanges(false);
+      } catch (err) {
+        console.warn('Auto-save notice:', err);
+      } finally {
+        isSavingRef.current = false;
+      }
     }, 2500);
 
     return () => clearTimeout(timer);
@@ -435,11 +435,11 @@ export default function App() {
     }));
   };
 
-  // Handlers para Fotos com PERSISTÊNCIA IMEDIATA NO BANCO LOCAL (à prova de travamento/crash do navegador)
+  // Handlers para Fotos (atualização limpa e reativa; a persistência é gerenciada com segurança pelo auto-save debounced)
   const handleUpdateSpdaPhotos = (spdaPhotos: PhotoSlot[]) => {
     setReport((prev) => {
       const currentTower = prev.torreAtual || 'Torre 1';
-      const updated: SpdaReport = {
+      return {
         ...prev,
         spdaPhotos,
         torresData: {
@@ -457,15 +457,13 @@ export default function App() {
           },
         },
       };
-      saveReportToStorage(updated).catch(() => {});
-      return updated;
     });
   };
 
   const handleUpdateMeasurementPhotos = (measurementPhotos: PhotoSlot[]) => {
     setReport((prev) => {
       const currentTower = prev.torreAtual || 'Torre 1';
-      const updated: SpdaReport = {
+      return {
         ...prev,
         measurementPhotos,
         torresData: {
@@ -483,15 +481,13 @@ export default function App() {
           },
         },
       };
-      saveReportToStorage(updated).catch(() => {});
-      return updated;
     });
   };
 
   const handleUpdateQuadrosPhotos = (quadrosPhotos: PhotoSlot[]) => {
     setReport((prev) => {
       const currentTower = prev.torreAtual || 'Torre 1';
-      const updated: SpdaReport = {
+      return {
         ...prev,
         quadrosPhotos,
         torresData: {
@@ -509,25 +505,15 @@ export default function App() {
           },
         },
       };
-      saveReportToStorage(updated).catch(() => {});
-      return updated;
     });
   };
 
   const handleUpdateLocalPhotos = (localPhotos: PhotoSlot[]) => {
-    setReport((prev) => {
-      const updated: SpdaReport = { ...prev, localPhotos };
-      saveReportToStorage(updated).catch(() => {});
-      return updated;
-    });
+    setReport((prev) => ({ ...prev, localPhotos }));
   };
 
   const handleUpdateEquipmentPhoto = (url: string) => {
-    setReport((prev) => {
-      const updated: SpdaReport = { ...prev, equipmentPhotoUrl: url };
-      saveReportToStorage(updated).catch(() => {});
-      return updated;
-    });
+    setReport((prev) => ({ ...prev, equipmentPhotoUrl: url }));
   };
 
   // Alterna a torre em análise, sincronizando as fotos da torre anterior e carregando as da nova

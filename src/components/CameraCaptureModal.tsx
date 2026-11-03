@@ -209,14 +209,18 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     let optimizedDataUrl: string;
 
     if (rawSource instanceof HTMLCanvasElement) {
-      optimizedDataUrl = rawSource.toDataURL('image/jpeg', 0.82);
       optimizedBlob = await new Promise<Blob>((res) => {
-        rawSource.toBlob((b) => res(b || new Blob([], { type: 'image/jpeg' })), 'image/jpeg', 0.82);
+        rawSource.toBlob((b) => res(b || new Blob([], { type: 'image/jpeg' })), 'image/jpeg', 0.78);
       });
       // Libera imediatamente a memória GPU alocada pelo quadro do vídeo
       disposeCanvas(rawSource);
+      optimizedDataUrl = await new Promise<string>((res) => {
+        const r = new FileReader();
+        r.onload = () => res((r.result as string) || '');
+        r.readAsDataURL(optimizedBlob);
+      });
     } else {
-      const opt = await optimizeImageFileToBlob(rawSource, 1280, 1280, 0.82);
+      const opt = await optimizeImageFileToBlob(rawSource, 1080, 1080, 0.78);
       optimizedBlob = opt.blob;
       optimizedDataUrl = opt.dataUrl;
     }
@@ -241,7 +245,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       diskFileName,
     };
 
-    // 2. Salva AUTOMATICAMENTE no banco de dados local para fotos realizadas em campo (sempre seguro)
+    // 2. Salva no banco de dados local para fotos realizadas em campo (sempre seguro)
     saveFieldPhoto({
       id: newId,
       reportId: 'current',
@@ -271,7 +275,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
     setCapturedThumbnails((prev) => [
       { id: newId, url: optimizedDataUrl, section: getSectionSubfolderName(section) },
-      ...prev.slice(0, 7),
+      ...prev.slice(0, 2),
     ]);
 
     const newCount = sessionCount + 1;
@@ -290,13 +294,25 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
     try {
       const video = videoRef.current;
+      const rawW = video.videoWidth || 1080;
+      const rawH = video.videoHeight || 720;
+      const maxDim = 1080;
+      let width = rawW;
+      let height = rawH;
+
+      if (width > height && width > maxDim) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else if (height > maxDim) {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+
       const canvas = document.createElement('canvas');
-      const width = video.videoWidth || 1280;
-      const height = video.videoHeight || 720;
       canvas.width = width;
       canvas.height = height;
 
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { alpha: false });
       if (!ctx) throw new Error('Não foi possível processar o quadro da câmera.');
 
       if (facingMode === 'user') {
@@ -304,6 +320,8 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
         ctx.scale(-1, 1);
       }
 
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'medium';
       ctx.drawImage(video, 0, 0, width, height);
 
       await registerCapturedPhoto(canvas, currentSection, currentTower);

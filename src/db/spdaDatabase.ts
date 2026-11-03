@@ -276,7 +276,7 @@ export async function syncCondominioFromReport(report: SpdaReport): Promise<Cond
     quantidadeTorres: qtdTorres,
     torresNomes,
     periodoAvaliacao: report.client.periodoAvaliacao,
-    totalLaudos: (existing?.totalLaudos || 0) + 1,
+    totalLaudos: existing?.totalLaudos || 1,
   });
 }
 

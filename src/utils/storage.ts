@@ -95,19 +95,21 @@ export async function saveReportToStorage(
   const isFullSync = options.fullSync ?? false;
 
   try {
-    // 1. Salva na chave ativa e também na chave permanente report_${id} do IndexedDB
+    // 1. Salva na chave ativa do IndexedDB de forma rápida e leve
     const db = await openDatabase();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       store.put(cleaned, REPORT_KEY);
 
-      if (cleaned.id) {
-        store.put(cleaned, `report_${cleaned.id}`);
-      }
-
-      if (hasUserContent(cleaned)) {
-        store.put(cleaned, BACKUP_REPORT_KEY);
+      // backups secundários apenas em fullSync para não sobrecarregar I/O do celular
+      if (isFullSync) {
+        if (cleaned.id) {
+          store.put(cleaned, `report_${cleaned.id}`);
+        }
+        if (hasUserContent(cleaned)) {
+          store.put(cleaned, BACKUP_REPORT_KEY);
+        }
       }
 
       tx.oncomplete = () => resolve();
@@ -125,26 +127,25 @@ export async function saveReportToStorage(
       // ignore
     }
 
-    // 3. Atualiza banco mestre relacional para persistência permanente
-    saveLaudoRecord(cleaned).catch(() => {});
-    syncCondominioFromReport(cleaned).catch(() => {});
-
-    if (cleaned.client?.name) {
-      saveCliente({
-        name: cleaned.client.name,
-        cnpj: cleaned.client.cnpj,
-        local: cleaned.client.local,
-        municipio: cleaned.client.municipio,
-        ramoAtividade: cleaned.client.ramoAtividade,
-        tecnico: cleaned.client.tecnico,
-        cargo: cleaned.client.cargo,
-        crea: cleaned.client.crea,
-        art: cleaned.client.art,
-      }).catch(() => {});
-    }
-
-    // Sincroniza fotos no banco relacional
+    // 3. Atualiza banco mestre relacional apenas em fullSync (salvamento mestre ou a cada 60s)
     if (isFullSync) {
+      saveLaudoRecord(cleaned).catch(() => {});
+      syncCondominioFromReport(cleaned).catch(() => {});
+
+      if (cleaned.client?.name) {
+        saveCliente({
+          name: cleaned.client.name,
+          cnpj: cleaned.client.cnpj,
+          local: cleaned.client.local,
+          municipio: cleaned.client.municipio,
+          ramoAtividade: cleaned.client.ramoAtividade,
+          tecnico: cleaned.client.tecnico,
+          cargo: cleaned.client.cargo,
+          crea: cleaned.client.crea,
+          art: cleaned.client.art,
+        }).catch(() => {});
+      }
+
       syncPhotosToFieldStore(cleaned).catch(() => {});
     }
   } catch (err) {
@@ -855,7 +856,6 @@ export async function loadReportFromStorage(): Promise<SpdaReport | null> {
     const backup = await getFromDb(BACKUP_REPORT_KEY);
     if (backup && hasUserContent(backup)) {
       candidate = backup;
-      await saveReportToStorage(candidate);
     }
   }
 
@@ -864,7 +864,6 @@ export async function loadReportFromStorage(): Promise<SpdaReport | null> {
     const emergency = await getFromDb(EMERGENCY_RECOVERY_KEY);
     if (emergency && hasUserContent(emergency)) {
       candidate = emergency;
-      await saveReportToStorage(candidate);
     }
   }
 
@@ -876,7 +875,6 @@ export async function loadReportFromStorage(): Promise<SpdaReport | null> {
         const mostRecent = await loadSavedReportById(savedList[0].id);
         if (mostRecent && hasUserContent(mostRecent)) {
           candidate = mostRecent;
-          await saveReportToStorage(mostRecent);
         }
       }
     } catch {

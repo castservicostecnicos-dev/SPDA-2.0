@@ -28,6 +28,7 @@ import { SelectTowerModal } from './SelectTowerModal';
 import { RestorePhotosModal } from './RestorePhotosModal';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { RealFoldersSyncModal } from './RealFoldersSyncModal';
+import { PhotoCardItem, DebouncedTextInput } from './PhotoCardItem';
 import { optimizeImageFile, optimizeImageFileToBlob, optimizeHighFidelityPhoto } from '../utils/imageOptimizer';
 import { saveFieldPhoto } from '../db/spdaDatabase';
 import {
@@ -306,7 +307,7 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
     for (let fIndex = 0; fIndex < filesArray.length; fIndex++) {
       const file = filesArray[fIndex];
       try {
-        const optimized = await optimizeImageFileToBlob(file, 1280, 1280, 0.8);
+        const optimized = await optimizeImageFileToBlob(file, 1080, 1080, 0.78);
         const photoIndex = currentCount + fIndex;
         const padIndex = String(photoIndex + 1).padStart(2, '0');
         const diskFileName = `foto_${padIndex}.jpg`;
@@ -368,11 +369,17 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
 
     if (newItems.length > 0) {
       if (type === 'spda') {
-        onUpdateSpdaPhotos([...spdaPhotos, ...newItems]);
+        const next = [...spdaPhotosRef.current, ...newItems];
+        spdaPhotosRef.current = next;
+        onUpdateSpdaPhotos(next);
       } else if (type === 'medicao') {
-        onUpdateMeasurementPhotos([...measurementPhotos, ...newItems]);
+        const next = [...measurementPhotosRef.current, ...newItems];
+        measurementPhotosRef.current = next;
+        onUpdateMeasurementPhotos(next);
       } else if (type === 'quadros') {
-        onUpdateQuadrosPhotos([...quadrosPhotos, ...newItems]);
+        const next = [...quadrosPhotosRef.current, ...newItems];
+        quadrosPhotosRef.current = next;
+        onUpdateQuadrosPhotos(next);
       }
       showSyncToast(`✓ ${newItems.length} foto(s) adicionada(s) e salvas no banco de dados!`);
     }
@@ -386,8 +393,8 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
     if (!file) return;
 
     try {
-      const optimized = await optimizeImageFileToBlob(file, 1280, 1280, 0.8);
-      const photoIndex = localPhotos.length;
+      const optimized = await optimizeImageFileToBlob(file, 1080, 1080, 0.78);
+      const photoIndex = localPhotosRef.current.length;
       const padIndex = String(photoIndex + 1).padStart(2, '0');
       const diskFileName = `foto_${padIndex}.jpg`;
       const slotId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -427,7 +434,9 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
         // ignore
       }
 
-      onUpdateLocalPhotos([...localPhotos, slot]);
+      const next = [...localPhotosRef.current, slot];
+      localPhotosRef.current = next;
+      onUpdateLocalPhotos(next);
       showSyncToast(`✓ Foto do local salva no banco de dados e na pasta!`);
     } catch (err) {
       console.error('Erro ao otimizar foto local', err);
@@ -436,65 +445,165 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
     if (e.target) e.target.value = '';
   };
 
-  // Helper to replace single photo with compression
-  const handleReplacePhoto = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    index: number,
-    type: 'spda' | 'medicao' | 'quadros' | 'local'
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const url = await optimizeImageFile(file);
+  // Memoized callback to update photo caption without re-rendering sibling cards
+  const handleUpdateCaption = React.useCallback(
+    (index: number, caption: string, type: 'spda' | 'medicao' | 'quadros') => {
       if (type === 'spda') {
-        const copy = [...spdaPhotos];
-        copy[index] = { ...copy[index], url, caption: '', updatedAt: Date.now(), syncedAt: undefined };
-        onUpdateSpdaPhotos(copy);
+        const copy = [...spdaPhotosRef.current];
+        if (copy[index] && copy[index].caption !== caption) {
+          copy[index] = { ...copy[index], caption };
+          spdaPhotosRef.current = copy;
+          onUpdateSpdaPhotos(copy);
+        }
       } else if (type === 'medicao') {
-        const copy = [...measurementPhotos];
-        copy[index] = { ...copy[index], url, caption: '', updatedAt: Date.now(), syncedAt: undefined };
-        onUpdateMeasurementPhotos(copy);
+        const copy = [...measurementPhotosRef.current];
+        if (copy[index] && copy[index].caption !== caption) {
+          copy[index] = { ...copy[index], caption };
+          measurementPhotosRef.current = copy;
+          onUpdateMeasurementPhotos(copy);
+        }
       } else if (type === 'quadros') {
-        const copy = [...quadrosPhotos];
-        copy[index] = { ...copy[index], url, caption: '', updatedAt: Date.now(), syncedAt: undefined };
-        onUpdateQuadrosPhotos(copy);
-      } else if (type === 'local') {
-        const copy = [...localPhotos];
-        copy[index] = { ...copy[index], url, caption: '', updatedAt: Date.now(), syncedAt: undefined };
-        onUpdateLocalPhotos(copy);
+        const copy = [...quadrosPhotosRef.current];
+        if (copy[index] && copy[index].caption !== caption) {
+          copy[index] = { ...copy[index], caption };
+          quadrosPhotosRef.current = copy;
+          onUpdateQuadrosPhotos(copy);
+        }
       }
-    } catch (err) {
-      console.error('Erro ao substituir foto', err);
-    }
+    },
+    [onUpdateSpdaPhotos, onUpdateMeasurementPhotos, onUpdateQuadrosPhotos]
+  );
 
-    if (e.target) e.target.value = '';
-  };
+  // Memoized callback to update measurement value
+  const handleUpdateMeasurementValue = React.useCallback(
+    (index: number, val: string) => {
+      const copy = [...measurementPhotosRef.current];
+      if (copy[index] && copy[index].measurementValue !== val) {
+        copy[index] = { ...copy[index], measurementValue: val };
+        measurementPhotosRef.current = copy;
+        onUpdateMeasurementPhotos(copy);
+      }
+    },
+    [onUpdateMeasurementPhotos]
+  );
+
+  // Memoized callback to toggle red circle marker
+  const handleToggleCircle = React.useCallback(
+    (index: number, checked: boolean, type: 'spda' | 'quadros') => {
+      if (type === 'spda') {
+        const copy = [...spdaPhotosRef.current];
+        if (copy[index]) {
+          copy[index] = { ...copy[index], hasRedCircleMarker: checked };
+          spdaPhotosRef.current = copy;
+          onUpdateSpdaPhotos(copy);
+        }
+      } else if (type === 'quadros') {
+        const copy = [...quadrosPhotosRef.current];
+        if (copy[index]) {
+          copy[index] = { ...copy[index], hasRedCircleMarker: checked };
+          quadrosPhotosRef.current = copy;
+          onUpdateQuadrosPhotos(copy);
+        }
+      }
+    },
+    [onUpdateSpdaPhotos, onUpdateQuadrosPhotos]
+  );
+
+  // Memoized callback to adjust circle in modal
+  const handleAdjustCircle = React.useCallback(
+    (photo: PhotoSlot, index: number, type: 'spda' | 'quadros') => {
+      setFocusModalData({ photo, index, type });
+    },
+    []
+  );
+
+  // Helper to replace single photo with compression
+  const handleReplacePhoto = React.useCallback(
+    async (
+      e: React.ChangeEvent<HTMLInputElement>,
+      index: number,
+      type: 'spda' | 'medicao' | 'quadros' | 'local'
+    ) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const optimized = await optimizeImageFileToBlob(file, 1080, 1080, 0.78);
+        const url = optimized.dataUrl;
+        if (type === 'spda') {
+          const copy = [...spdaPhotosRef.current];
+          if (copy[index]) {
+            copy[index] = { ...copy[index], url, updatedAt: Date.now(), syncedAt: undefined };
+            spdaPhotosRef.current = copy;
+            onUpdateSpdaPhotos(copy);
+          }
+        } else if (type === 'medicao') {
+          const copy = [...measurementPhotosRef.current];
+          if (copy[index]) {
+            copy[index] = { ...copy[index], url, updatedAt: Date.now(), syncedAt: undefined };
+            measurementPhotosRef.current = copy;
+            onUpdateMeasurementPhotos(copy);
+          }
+        } else if (type === 'quadros') {
+          const copy = [...quadrosPhotosRef.current];
+          if (copy[index]) {
+            copy[index] = { ...copy[index], url, updatedAt: Date.now(), syncedAt: undefined };
+            quadrosPhotosRef.current = copy;
+            onUpdateQuadrosPhotos(copy);
+          }
+        } else if (type === 'local') {
+          const copy = [...localPhotosRef.current];
+          if (copy[index]) {
+            copy[index] = { ...copy[index], url, updatedAt: Date.now(), syncedAt: undefined };
+            localPhotosRef.current = copy;
+            onUpdateLocalPhotos(copy);
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao substituir foto', err);
+      }
+
+      if (e.target) e.target.value = '';
+    },
+    [onUpdateSpdaPhotos, onUpdateMeasurementPhotos, onUpdateQuadrosPhotos, onUpdateLocalPhotos]
+  );
 
   // Direct click on thumbnail to move circle
-  const handleDirectClickCircle = (
-    e: React.MouseEvent<HTMLDivElement>,
-    index: number,
-    type: 'spda' | 'medicao' | 'quadros'
-  ) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const rawX = Math.round(Math.max(8, Math.min(92, ((e.clientX - rect.left) / rect.width) * 100)));
-    const rawY = Math.round(Math.max(8, Math.min(92, ((e.clientY - rect.top) / rect.height) * 100)));
+  const handleDirectClickCircle = React.useCallback(
+    (
+      e: React.MouseEvent<HTMLDivElement>,
+      index: number,
+      type: 'spda' | 'medicao' | 'quadros'
+    ) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const rawX = Math.round(Math.max(8, Math.min(92, ((e.clientX - rect.left) / rect.width) * 100)));
+      const rawY = Math.round(Math.max(8, Math.min(92, ((e.clientY - rect.top) / rect.height) * 100)));
 
-    if (type === 'spda') {
-      const copy = [...spdaPhotos];
-      copy[index] = { ...copy[index], hasRedCircleMarker: true, circleX: rawX, circleY: rawY };
-      onUpdateSpdaPhotos(copy);
-    } else if (type === 'medicao') {
-      const copy = [...measurementPhotos];
-      copy[index] = { ...copy[index], hasRedCircleMarker: true, circleX: rawX, circleY: rawY };
-      onUpdateMeasurementPhotos(copy);
-    } else if (type === 'quadros') {
-      const copy = [...quadrosPhotos];
-      copy[index] = { ...copy[index], hasRedCircleMarker: true, circleX: rawX, circleY: rawY };
-      onUpdateQuadrosPhotos(copy);
-    }
-  };
+      if (type === 'spda') {
+        const copy = [...spdaPhotosRef.current];
+        if (copy[index]) {
+          copy[index] = { ...copy[index], hasRedCircleMarker: true, circleX: rawX, circleY: rawY };
+          spdaPhotosRef.current = copy;
+          onUpdateSpdaPhotos(copy);
+        }
+      } else if (type === 'medicao') {
+        const copy = [...measurementPhotosRef.current];
+        if (copy[index]) {
+          copy[index] = { ...copy[index], hasRedCircleMarker: true, circleX: rawX, circleY: rawY };
+          measurementPhotosRef.current = copy;
+          onUpdateMeasurementPhotos(copy);
+        }
+      } else if (type === 'quadros') {
+        const copy = [...quadrosPhotosRef.current];
+        if (copy[index]) {
+          copy[index] = { ...copy[index], hasRedCircleMarker: true, circleX: rawX, circleY: rawY };
+          quadrosPhotosRef.current = copy;
+          onUpdateQuadrosPhotos(copy);
+        }
+      }
+    },
+    [onUpdateSpdaPhotos, onUpdateMeasurementPhotos, onUpdateQuadrosPhotos]
+  );
 
   const [photoToDelete, setPhotoToDelete] = useState<{
     photo: PhotoSlot;
@@ -504,22 +613,25 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
   } | null>(null);
 
   // Solicita exclusão com confirmação obrigatória e remoção do arquivo físico na pasta
-  const handleDeletePhoto = (index: number, type: 'spda' | 'medicao' | 'quadros' | 'local') => {
-    let targetPhoto: PhotoSlot | undefined;
-    if (type === 'spda') targetPhoto = spdaPhotos[index];
-    else if (type === 'medicao') targetPhoto = measurementPhotos[index];
-    else if (type === 'quadros') targetPhoto = quadrosPhotos[index];
-    else if (type === 'local') targetPhoto = localPhotos[index];
+  const handleDeletePhoto = React.useCallback(
+    (index: number, type: 'spda' | 'medicao' | 'quadros' | 'local') => {
+      let targetPhoto: PhotoSlot | undefined;
+      if (type === 'spda') targetPhoto = spdaPhotosRef.current[index];
+      else if (type === 'medicao') targetPhoto = measurementPhotosRef.current[index];
+      else if (type === 'quadros') targetPhoto = quadrosPhotosRef.current[index];
+      else if (type === 'local') targetPhoto = localPhotosRef.current[index];
 
-    if (!targetPhoto) return;
+      if (!targetPhoto) return;
 
-    setPhotoToDelete({
-      photo: targetPhoto,
-      index,
-      type,
-      tower: targetPhoto.towerName || torreAtual,
-    });
-  };
+      setPhotoToDelete({
+        photo: targetPhoto,
+        index,
+        type,
+        tower: targetPhoto.towerName || torreAtual,
+      });
+    },
+    [torreAtual]
+  );
 
   const handleConfirmDeletePhoto = async () => {
     if (!photoToDelete) return;
@@ -1153,149 +1265,20 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-2">
-              {spdaPhotos.map((photo, index) => {
-                const hasCircle = photo.hasRedCircleMarker ?? true;
-                const circleX = photo.circleX ?? 50;
-                const circleY = photo.circleY ?? 50;
-                const circleRadius = photo.circleRadius ?? 24;
-
-                return (
-                  <div
-                    key={photo.id || index}
-                    className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between space-y-2.5 shadow-2xs hover:border-slate-400 transition-all"
-                  >
-                    {/* Imagem com destaque e botão de exclusão visível */}
-                    <div
-                      onClick={(e) => {
-                        if (hasCircle) handleDirectClickCircle(e, index, 'spda');
-                      }}
-                      className={`relative aspect-[38.5/48] rounded-lg overflow-hidden bg-slate-200 flex items-center justify-center ${
-                        hasCircle ? 'cursor-crosshair' : ''
-                      }`}
-                      title={hasCircle ? 'Clique para mover o círculo para este ponto da foto' : undefined}
-                    >
-                      <img
-                        src={photo.url}
-                        alt={`Foto SPDA ${index + 1}`}
-                        loading="lazy"
-                        decoding="async"
-                        className="w-full h-full object-cover select-none pointer-events-none"
-                      />
-
-                      {/* Círculo vermelho móvel renderizado na posição exata */}
-                      {hasCircle && (
-                        <div
-                          className="absolute pointer-events-none transition-all"
-                          style={{
-                            left: `${circleX}%`,
-                            top: `${circleY}%`,
-                            width: `${circleRadius * 2.2}%`,
-                            height: `${circleRadius * 1.8}%`,
-                            transform: 'translate(-50%, -50%)',
-                          }}
-                        >
-                          <div className="w-full h-full border-2 border-red-600 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.9)] flex items-center justify-center">
-                            <div className="w-1.5 h-1.5 bg-red-600 rounded-full opacity-80" />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Identificador numérico da foto */}
-                      <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/75 text-white text-[10px] font-bold rounded pointer-events-none">
-                        #{index + 1}
-                      </span>
-
-                      {/* BOTÃO EXCLUIR SUPERIOR PERMANENTEMENTE VISÍVEL */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeletePhoto(index, 'spda');
-                        }}
-                        className="absolute top-1.5 right-1.5 p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-md shadow-md z-10 transition-colors flex items-center justify-center"
-                        title="EXCLUIR ESTA FOTO"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <input
-                        type="text"
-                        value={photo.caption || ''}
-                        onChange={(e) => {
-                          const copy = [...spdaPhotos];
-                          copy[index] = { ...copy[index], caption: e.target.value };
-                          onUpdateSpdaPhotos(copy);
-                        }}
-                        placeholder="Legenda (opcional)"
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                      />
-
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="flex items-center gap-1 text-[10px] text-red-700 font-bold cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={hasCircle}
-                              onChange={(e) => {
-                                const copy = [...spdaPhotos];
-                                copy[index] = { ...copy[index], hasRedCircleMarker: e.target.checked };
-                                onUpdateSpdaPhotos(copy);
-                              }}
-                              className="w-3.5 h-3.5 text-red-600 rounded border-slate-300"
-                            />
-                            <span>CÍRCULO DE DESTAQUE</span>
-                          </label>
-
-                          {hasCircle && (
-                            <span className="text-[9px] font-mono text-slate-500">
-                              {circleX}%, {circleY}%
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Botão em destaque para mover/ajustar o círculo */}
-                        {hasCircle && (
-                          <button
-                            type="button"
-                            onClick={() => setFocusModalData({ photo, index, type: 'spda' })}
-                            className="w-full py-1 px-2 text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-md flex items-center justify-center gap-1 transition-colors"
-                            title="Abrir tela ampliada para mover o círculo"
-                          >
-                            <Target className="w-3 h-3 text-red-600" />
-                            <span>AJUSTAR CÍRCULO</span>
-                          </button>
-                        )}
-                      </div>
-
-                      {/* LINHA DE AÇÕES INFERIORES: TROCAR E EXCLUIR CLARAMENTE VISÍVEIS */}
-                      <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200">
-                        <label className="flex-1 py-1 px-2 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 rounded border border-slate-300 flex items-center justify-center gap-1 cursor-pointer transition-colors">
-                          <Upload className="w-3 h-3 text-slate-500" />
-                          <span>TROCAR</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleReplacePhoto(e, index, 'spda')}
-                            className="hidden"
-                          />
-                        </label>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeletePhoto(index, 'spda')}
-                          className="flex-1 py-1 px-2 text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded border border-rose-200 flex items-center justify-center gap-1 transition-colors"
-                          title="Excluir esta foto"
-                        >
-                          <Trash2 className="w-3 h-3 text-rose-600" />
-                          <span>EXCLUIR</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {spdaPhotos.map((photo, index) => (
+                <PhotoCardItem
+                  key={photo.id || `spda-${index}`}
+                  photo={photo}
+                  index={index}
+                  type="spda"
+                  onUpdateCaption={handleUpdateCaption}
+                  onToggleCircle={handleToggleCircle}
+                  onAdjustCircle={handleAdjustCircle}
+                  onDirectClickCircle={handleDirectClickCircle}
+                  onReplacePhoto={handleReplacePhoto}
+                  onDeletePhoto={handleDeletePhoto}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -1394,93 +1377,16 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-2">
               {measurementPhotos.map((photo, index) => (
-                <div
-                  key={photo.id || index}
-                  className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5 shadow-2xs hover:border-slate-400 transition-all flex flex-col justify-between"
-                >
-                  <div className="relative aspect-[38.5/42] rounded-lg overflow-hidden bg-slate-200 flex items-center justify-center">
-                    <img
-                      src={photo.url}
-                      alt={`Ponto de Medição ${index + 1}`}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-full object-cover"
-                    />
-                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/75 text-white text-[10px] font-bold rounded">
-                      #{index + 1}
-                    </span>
-
-                    {/* BOTÃO EXCLUIR SUPERIOR VISÍVEL */}
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePhoto(index, 'medicao')}
-                      className="absolute top-1.5 right-1.5 p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-md shadow-md z-10 transition-colors"
-                      title="EXCLUIR FOTO"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600">
-                        LEGENDA (OPCIONAL):
-                      </label>
-                      <input
-                        type="text"
-                        value={photo.caption || ''}
-                        onChange={(e) => {
-                          const copy = [...measurementPhotos];
-                          copy[index] = { ...copy[index], caption: e.target.value };
-                          onUpdateMeasurementPhotos(copy);
-                        }}
-                        placeholder="Legenda (opcional)"
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-md"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-blue-700">
-                        VALOR MEDIDO (OPCIONAL):
-                      </label>
-                      <input
-                        type="text"
-                        value={photo.measurementValue || ''}
-                        onChange={(e) => {
-                          const copy = [...measurementPhotos];
-                          copy[index] = { ...copy[index], measurementValue: e.target.value };
-                          onUpdateMeasurementPhotos(copy);
-                        }}
-                        placeholder="Ex: 0,18 Ω (opcional)"
-                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold text-blue-800 bg-blue-50/50 border border-blue-200 rounded-md"
-                      />
-                    </div>
-
-                    {/* LINHA DE AÇÕES INFERIORES: TROCAR E EXCLUIR */}
-                    <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200">
-                      <label className="flex-1 py-1 px-2 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 rounded border border-slate-300 flex items-center justify-center gap-1 cursor-pointer transition-colors">
-                        <Upload className="w-3 h-3 text-slate-500" />
-                        <span>TROCAR</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleReplacePhoto(e, index, 'medicao')}
-                          className="hidden"
-                        />
-                      </label>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePhoto(index, 'medicao')}
-                        className="flex-1 py-1 px-2 text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded border border-rose-200 flex items-center justify-center gap-1 transition-colors"
-                        title="Excluir esta foto"
-                      >
-                        <Trash2 className="w-3 h-3 text-rose-600" />
-                        <span>EXCLUIR</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <PhotoCardItem
+                  key={photo.id || `med-${index}`}
+                  photo={photo}
+                  index={index}
+                  type="medicao"
+                  onUpdateCaption={handleUpdateCaption}
+                  onUpdateMeasurementValue={handleUpdateMeasurementValue}
+                  onReplacePhoto={handleReplacePhoto}
+                  onDeletePhoto={handleDeletePhoto}
+                />
               ))}
             </div>
           )}
@@ -1579,140 +1485,20 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-              {quadrosPhotos.map((photo, index) => {
-                const hasCircle = !!photo.hasRedCircleMarker;
-                const circleX = photo.circleX ?? 50;
-                const circleY = photo.circleY ?? 50;
-                const circleRadius = photo.circleRadius ?? 24;
-
-                return (
-                  <div
-                    key={photo.id || index}
-                    className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5 shadow-2xs hover:border-slate-400 transition-all flex flex-col justify-between"
-                  >
-                    <div
-                      onClick={(e) => {
-                        if (hasCircle) handleDirectClickCircle(e, index, 'quadros');
-                      }}
-                      className={`relative aspect-[38.5/42] rounded-lg overflow-hidden bg-slate-200 flex items-center justify-center ${
-                        hasCircle ? 'cursor-crosshair' : ''
-                      }`}
-                    >
-                      <img
-                        src={photo.url}
-                        alt={`Quadro ${index + 1}`}
-                        loading="lazy"
-                        decoding="async"
-                        className="w-full h-full object-cover select-none pointer-events-none"
-                      />
-
-                      {hasCircle && (
-                        <div
-                          className="absolute pointer-events-none transition-all"
-                          style={{
-                            left: `${circleX}%`,
-                            top: `${circleY}%`,
-                            width: `${circleRadius * 2.2}%`,
-                            height: `${circleRadius * 1.8}%`,
-                            transform: 'translate(-50%, -50%)',
-                          }}
-                        >
-                          <div className="w-full h-full border-2 border-red-600 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.9)] flex items-center justify-center">
-                            <div className="w-1.5 h-1.5 bg-red-600 rounded-full opacity-80" />
-                          </div>
-                        </div>
-                      )}
-
-                      <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/75 text-white text-[10px] font-bold rounded pointer-events-none">
-                        #{index + 1}
-                      </span>
-
-                      {/* BOTÃO EXCLUIR SUPERIOR VISÍVEL */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeletePhoto(index, 'quadros');
-                        }}
-                        className="absolute top-1.5 right-1.5 p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-md shadow-md z-10 transition-colors"
-                        title="EXCLUIR FOTO"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600">
-                          DESCRIÇÃO DO QUADRO (OPCIONAL):
-                        </label>
-                        <input
-                          type="text"
-                          value={photo.caption || ''}
-                          onChange={(e) => {
-                            const copy = [...quadrosPhotos];
-                            copy[index] = { ...copy[index], caption: e.target.value };
-                            onUpdateQuadrosPhotos(copy);
-                          }}
-                          placeholder="Descrição / legenda (opcional)"
-                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-md"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between pt-0.5">
-                        <label className="flex items-center gap-1 text-[10px] text-red-700 font-bold cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={hasCircle}
-                            onChange={(e) => {
-                              const copy = [...quadrosPhotos];
-                              copy[index] = { ...copy[index], hasRedCircleMarker: e.target.checked };
-                              onUpdateQuadrosPhotos(copy);
-                            }}
-                            className="w-3.5 h-3.5 text-red-600 rounded border-slate-300"
-                          />
-                          <span>CÍRCULO DE DESTAQUE</span>
-                        </label>
-
-                        {hasCircle && (
-                          <button
-                            type="button"
-                            onClick={() => setFocusModalData({ photo, index, type: 'quadros' })}
-                            className="text-[9px] font-bold text-red-700 bg-red-50 hover:bg-red-100 px-1.5 py-0.5 rounded border border-red-200 flex items-center gap-1"
-                          >
-                            <Target className="w-2.5 h-2.5" />
-                            AJUSTAR
-                          </button>
-                        )}
-                      </div>
-
-                      {/* LINHA DE AÇÕES INFERIORES: TROCAR E EXCLUIR */}
-                      <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200">
-                        <label className="flex-1 py-1 px-2 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 rounded border border-slate-300 flex items-center justify-center gap-1 cursor-pointer transition-colors">
-                          <Upload className="w-3 h-3 text-slate-500" />
-                          <span>TROCAR</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleReplacePhoto(e, index, 'quadros')}
-                            className="hidden"
-                          />
-                        </label>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeletePhoto(index, 'quadros')}
-                          className="flex-1 py-1 px-2 text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded border border-rose-200 flex items-center justify-center gap-1 transition-colors"
-                          title="Excluir esta foto"
-                        >
-                          <Trash2 className="w-3 h-3 text-rose-600" />
-                          <span>EXCLUIR</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {quadrosPhotos.map((photo, index) => (
+                <PhotoCardItem
+                  key={photo.id || `quadro-${index}`}
+                  photo={photo}
+                  index={index}
+                  type="quadros"
+                  onUpdateCaption={handleUpdateCaption}
+                  onToggleCircle={handleToggleCircle}
+                  onAdjustCircle={handleAdjustCircle}
+                  onDirectClickCircle={handleDirectClickCircle}
+                  onReplacePhoto={handleReplacePhoto}
+                  onDeletePhoto={handleDeletePhoto}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -1805,13 +1591,13 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                     <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
                       Legenda da Vista Aérea:
                     </label>
-                    <input
-                      type="text"
-                      value={localPhotos[0].caption || ''}
-                      onChange={(e) => {
-                        const copy = [...localPhotos];
-                        if (copy[0]) {
-                          copy[0] = { ...copy[0], caption: e.target.value };
+                    <DebouncedTextInput
+                      initialValue={localPhotos[0].caption || ''}
+                      onSave={(newCaption) => {
+                        const copy = [...localPhotosRef.current];
+                        if (copy[0] && copy[0].caption !== newCaption) {
+                          copy[0] = { ...copy[0], caption: newCaption };
+                          localPhotosRef.current = copy;
                           onUpdateLocalPhotos(copy);
                         }
                       }}
@@ -1935,13 +1721,13 @@ export const PhotoUploaderSection: React.FC<PhotoUploaderSectionProps> = ({
                     <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
                       Legenda da Fachada:
                     </label>
-                    <input
-                      type="text"
-                      value={localPhotos[1].caption || ''}
-                      onChange={(e) => {
-                        const copy = [...localPhotos];
-                        if (copy[1]) {
-                          copy[1] = { ...copy[1], caption: e.target.value };
+                    <DebouncedTextInput
+                      initialValue={localPhotos[1].caption || ''}
+                      onSave={(newCaption) => {
+                        const copy = [...localPhotosRef.current];
+                        if (copy[1] && copy[1].caption !== newCaption) {
+                          copy[1] = { ...copy[1], caption: newCaption };
+                          localPhotosRef.current = copy;
                           onUpdateLocalPhotos(copy);
                         }
                       }}
