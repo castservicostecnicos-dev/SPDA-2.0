@@ -885,394 +885,243 @@ export const generatePdfBlob = async (
   );
 
   // ==========================================
-  // PÁGINA 3: 3) CARACTERÍSTICAS DA EDIFICAÇÃO & VISTA AÉREA (EM DESTAQUE)
-  // Cada foto do local agora ganha sua própria sessão/seção em destaque com título próprio
+  // PÁGINA 3: 3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL,
+  // 3.1 VISTA AÉREA, 3.2 FACHADA PRINCIPAL,
+  // PARÂMETROS CONSTRUTIVOS & 4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS
+  // INÍCIO EM NOVA PÁGINA CONFORME SOLICITADO
   // ==========================================
-  const validLocalInfos = localPhotoInfos.filter((item): item is UncroppedPhotoData => Boolean(item));
-  const isMultiTower =
-    Boolean(client.quantidadeTorres && client.quantidadeTorres > 1) ||
-    Boolean(client.torresNomes && client.torresNomes.length > 1) ||
-    Object.keys(report.torresData || {}).length > 1 ||
-    new Set([...spdaPhotos, ...measurementPhotos, ...quadrosPhotos].map((p) => p.towerName).filter(Boolean)).size > 1;
-
-  onProgress?.(48, 'Gerando Características do Local e Fotos em Destaque...');
+  onProgress?.(48, 'Gerando Características do Local, Fachadas e Histórico...');
   pdf.addPage('a4', 'portrait');
   drawWatermark(pdf);
   drawHeaderLogo(pdf);
 
-  // 3) CARACTERÍSTICAS DO LOCAL
-  let locY = 36;
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(10.5);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text('3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL', marginX, locY);
+  let p3Y = 36;
 
-  locY += 5;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.8);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(10.0);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('3) CARACTERÍSTICAS DA EDIFICAÇÃO & LOCAL', marginX, p3Y);
+  p3Y += 4.5;
+
   const rawLocDesc = (client.descricaoBloco || texts.caracteristicasLocal || '').trim();
   const isExcludedLocDesc =
     !rawLocDesc ||
     /^(?:torre\s*\d+|torre\s*\/\s*estrutura|estrutura\s*\/\s*torre)$/i.test(rawLocDesc);
   if (!isExcludedLocDesc) {
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(30, 41, 59);
     const locDescLines = pdf.splitTextToSize(rawLocDesc, contentWidth);
-    pdf.text(locDescLines, marginX, locY);
-    locY += locDescLines.length * 4.0 + 3;
+    pdf.text(locDescLines, marginX, p3Y);
+    p3Y += locDescLines.length * 3.6 + 2.5;
   }
 
-  if (validLocalInfos.length >= 2) {
-    // -------------------------------------------------------------------------
-    // VISTA AÉREA E FACHADA LADO A LADO (EM 2 COLUNAS COESAS)
-    // -------------------------------------------------------------------------
-    const colW = (contentWidth - 6) / 2; // 82mm cada coluna
-    const photoMaxH = 52; // Altura harmoniosa que garante fluxo contínuo na página
+  const aerialInfo = localPhotoInfos[0]?.dataUrl ? localPhotoInfos[0] : null;
+  const facadeInfo = localPhotoInfos[1]?.dataUrl ? localPhotoInfos[1] : null;
 
-    // Cabeçalho Foto 1: Vista Aérea
+  if (aerialInfo) {
     pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, locY, colW, 5.5, 'F');
+    pdf.rect(marginX, p3Y, contentWidth, 5.0, 'F');
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.5);
+    pdf.setFontSize(7.6);
     pdf.setTextColor(15, 23, 42);
-    pdf.text('3.1) VISTA AÉREA / SATÉLITE', marginX + 3, locY + 3.8);
+    pdf.text('3.1) VISTA AÉREA DA EDIFICAÇÃO / SATÉLITE', marginX + 3, p3Y + 3.5);
+    p3Y += 6.0;
 
-    // Cabeçalho Foto 2: Fachada
+    const { width: w1, height: h1 } = calculateContainedDimensions(aerialInfo.aspect, contentWidth, 62);
+    const x1 = marginX + (contentWidth - w1) / 2;
+    pdf.addImage(aerialInfo.dataUrl, aerialInfo.format, x1, p3Y, w1, h1);
+    p3Y += h1 + 2.0;
+
+    const cap1 = localPhotos[0]?.caption?.trim() || 'Vista aérea da circunvizinhança e posicionamento geográfico da edificação.';
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.8);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(cap1, marginX + contentWidth / 2, p3Y, { align: 'center', maxWidth: contentWidth });
+    p3Y += 4.5;
+  }
+
+  if (facadeInfo) {
     pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX + colW + 6, locY, colW, 5.5, 'F');
+    pdf.rect(marginX, p3Y, contentWidth, 5.0, 'F');
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.5);
+    pdf.setFontSize(7.6);
     pdf.setTextColor(15, 23, 42);
-    pdf.text('3.2) FACHADA PRINCIPAL', marginX + colW + 9, locY + 3.8);
+    const facadeTitle = aerialInfo ? '3.2) FACHADA PRINCIPAL DA EDIFICAÇÃO' : '3.1) FACHADA PRINCIPAL DA EDIFICAÇÃO';
+    pdf.text(facadeTitle, marginX + 3, p3Y + 3.5);
+    p3Y += 6.0;
 
-    locY += 7.5;
+    const { width: w2, height: h2 } = calculateContainedDimensions(facadeInfo.aspect, contentWidth, 62);
+    const x2 = marginX + (contentWidth - w2) / 2;
+    pdf.addImage(facadeInfo.dataUrl, facadeInfo.format, x2, p3Y, w2, h2);
+    p3Y += h2 + 2.0;
 
-    // Foto 1
-    const p1 = validLocalInfos[0];
-    const { width: w1, height: h1 } = calculateContainedDimensions(p1.aspect, colW, photoMaxH);
-    const x1 = marginX + (colW - w1) / 2;
-    const y1 = locY + (photoMaxH - h1) / 2;
-    pdf.addImage(p1.dataUrl, p1.format, x1, y1, w1, h1);
-
-    // Foto 2
-    const p2 = validLocalInfos[1];
-    const { width: w2, height: h2 } = calculateContainedDimensions(p2.aspect, colW, photoMaxH);
-    const x2 = marginX + colW + 6 + (colW - w2) / 2;
-    const y2 = locY + (photoMaxH - h2) / 2;
-    pdf.addImage(p2.dataUrl, p2.format, x2, y2, w2, h2);
-
-    locY += photoMaxH + 2.5;
-
-    // Legendas
-    const cap1 = localPhotos[0]?.caption?.trim() || 'Vista aérea da circunvizinhança e posicionamento geográfico.';
     const cap2 = localPhotos[1]?.caption?.trim() || 'Fachada principal da edificação e acessos vistoriados.';
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(6.5);
+    pdf.setFontSize(6.8);
     pdf.setTextColor(71, 85, 105);
-    pdf.text(pdf.splitTextToSize(cap1, colW), marginX + colW / 2, locY, { align: 'center', maxWidth: colW });
-    pdf.text(pdf.splitTextToSize(cap2, colW), marginX + colW + 6 + colW / 2, locY, { align: 'center', maxWidth: colW });
-
-    locY += 8.5;
-
-    // Parâmetros construtivos em sequência contínua
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, locY, contentWidth, 5.2, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.2);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)', marginX + 4, locY + 3.6);
-
-    const parametros = [
-      { param: 'Tipologia Construtiva:', valor: 'Alvenaria Convencional / Estrutura em Concreto Armado' },
-      { param: 'Topografia & Entorno:', valor: 'Terreno Urbano Plano com Edificações Vizinhas' },
-      { param: 'Nível de Proteção Dimensionado:', valor: 'Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)' },
-      { param: 'Métodos de Proteção Aplicáveis:', valor: 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)' },
-    ];
-
-    let paramY = locY + 5.2;
-    parametros.forEach((p, pIdx) => {
-      if (pIdx % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(marginX, paramY, contentWidth, 4.6, 'F');
-      }
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(6.8);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text(p.param, marginX + 3, paramY + 3.3);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(6.8);
-      pdf.setTextColor(71, 85, 105);
-      pdf.text(p.valor, marginX + 55, paramY + 3.3, { maxWidth: contentWidth - 58 });
-
-      pdf.setDrawColor(226, 232, 240);
-      pdf.setLineWidth(0.2);
-      pdf.line(marginX, paramY + 4.6, marginX + contentWidth, paramY + 4.6);
-      paramY += 4.6;
-    });
-
-    locY = paramY + 3;
-
-    // Texto de Ramo de atividade e nível de exposição
-    const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de moradores e equipamentos eletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.4);
-    pdf.setTextColor(30, 41, 59);
-    const expLines = pdf.splitTextToSize(exposicaoText, contentWidth);
-    pdf.text(expLines, marginX, locY);
-    locY += expLines.length * 3.6 + 3;
-
-    // Linha sutil divisória
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setLineWidth(0.3);
-    pdf.line(marginX, locY, marginX + contentWidth, locY);
-    locY += 4;
-
-    // 4) HISTÓRICO DE PROBLEMAS
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10.0);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS', marginX, locY);
-
-    locY += 4.5;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.4);
-    pdf.setTextColor(30, 41, 59);
-
-    const hist1 = `4.1- Devido à localização e infraestrutura da edificação, constata-se: ${client.historicoQueimaOcorrencias || '2 problemas de queima de equipamentos eletroeletrônicos'}.`;
-    const histLines1 = pdf.splitTextToSize(hist1, contentWidth);
-    pdf.text(histLines1, marginX, locY);
-    locY += histLines1.length * 3.6 + 2;
-
-    const hist2 = `4.2- A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.`;
-    const histLines2 = pdf.splitTextToSize(hist2, contentWidth);
-    pdf.text(histLines2, marginX, locY);
-  } else if (validLocalInfos.length === 1) {
-    // 1 foto do local em destaque na Página 3 na proporção nativa sem corte, estritamente limitada pela largura do documento
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, locY, contentWidth, 6, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.2);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('3.1) REGISTRO FOTOGRÁFICO DO LOCAL / FACHADA', marginX + 4, locY + 4.2);
-    locY += 8;
-
-    const singleInfo = validLocalInfos[0];
-    const { width: photoWidth, height: photoHeight } = calculateContainedDimensions(
-      singleInfo.aspect,
-      contentWidth, // 170mm máximo
-      105 // altura máxima na página 3
-    );
-
-    const photoX = marginX + (contentWidth - photoWidth) / 2;
-    pdf.addImage(singleInfo.dataUrl, singleInfo.format, photoX, locY, photoWidth, photoHeight);
-    locY += photoHeight + 3.5;
-
-    const cap = localPhotos[0]?.caption?.trim() || 'Foto do local e estrutura da edificação.';
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.2);
-    pdf.setTextColor(51, 65, 85);
-    pdf.text(cap, 105, locY, { align: 'center', maxWidth: photoWidth });
-    locY += 6;
-
-
-    // Ramo de atividade
-    const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de moradores e equipamentos eletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.8);
-    pdf.setTextColor(30, 41, 59);
-    const expLines = pdf.splitTextToSize(exposicaoText, contentWidth);
-    pdf.text(expLines, marginX, locY);
-    locY += expLines.length * 3.8 + 4;
-
-    // Linha divisória
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setLineWidth(0.3);
-    pdf.line(marginX, locY, marginX + contentWidth, locY);
-    locY += 5;
-
-    // 4) HISTÓRICO DE PROBLEMAS
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10.5);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS', marginX, locY);
-
-    locY += 5;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.8);
-    pdf.setTextColor(30, 41, 59);
-
-    const hist1 = `4.1- Devido à localização e infraestrutura da edificação, constata-se: ${client.historicoQueimaOcorrencias || '2 problemas de queima de equipamentos eletroeletrônicos'}.`;
-    const histLines1 = pdf.splitTextToSize(hist1, contentWidth);
-    pdf.text(histLines1, marginX, locY);
-    locY += histLines1.length * 3.8 + 2;
-
-    const hist2 = `4.2- A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.`;
-    const histLines2 = pdf.splitTextToSize(hist2, contentWidth);
-    pdf.text(histLines2, marginX, locY);
-
-  } else {
-    // Sem fotos do local cadastradas: Página 3 completa sem espaços vazios
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(marginX, locY, contentWidth, 6, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.0);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)', marginX + 4, locY + 4.2);
-
-    const parametros = [
-      { param: 'Tipologia Construtiva:', valor: 'Alvenaria Convencional / Estrutura em Concreto Armado' },
-      { param: 'Topografia & Entorno:', valor: 'Terreno Urbano Plano com Edificações Vizinhas' },
-      { param: 'Nível de Proteção Dimensionado:', valor: 'Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)' },
-      { param: 'Métodos de Proteção Aplicáveis:', valor: 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)' },
-    ];
-
-    let paramY = locY + 6;
-    parametros.forEach((p, pIdx) => {
-      if (pIdx % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(marginX, paramY, contentWidth, 6.0, 'F');
-      }
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.2);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text(p.param, marginX + 3, paramY + 4.2);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7.2);
-      pdf.setTextColor(71, 85, 105);
-      pdf.text(p.valor, marginX + 55, paramY + 4.2, { maxWidth: contentWidth - 58 });
-
-      pdf.setDrawColor(226, 232, 240);
-      pdf.setLineWidth(0.2);
-      pdf.line(marginX, paramY + 6.0, marginX + contentWidth, paramY + 6.0);
-      paramY += 6.0;
-    });
-    locY = paramY + 3;
-
-    const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de moradores e equipamentos eletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.8);
-    pdf.setTextColor(30, 41, 59);
-    const expLines = pdf.splitTextToSize(exposicaoText, contentWidth);
-    pdf.text(expLines, marginX, locY);
-    locY += expLines.length * 3.8 + 4;
-
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setLineWidth(0.3);
-    pdf.line(marginX, locY, marginX + contentWidth, locY);
-    locY += 5;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10.5);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text('4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS', marginX, locY);
-
-    locY += 5;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.8);
-    pdf.setTextColor(30, 41, 59);
-
-    const hist1 = `4.1- Devido à localização e infraestrutura da edificação, constata-se: ${client.historicoQueimaOcorrencias || '2 problemas de queima de equipamentos eletroeletrônicos'}.`;
-    const histLines1 = pdf.splitTextToSize(hist1, contentWidth);
-    pdf.text(histLines1, marginX, locY);
-    locY += histLines1.length * 3.8 + 2;
-
-    const hist2 = `4.2- A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.`;
-    const histLines2 = pdf.splitTextToSize(hist2, contentWidth);
-    pdf.text(histLines2, marginX, locY);
-    locY += histLines2.length * 3.8 + 4;
+    pdf.text(cap2, marginX + contentWidth / 2, p3Y, { align: 'center', maxWidth: contentWidth });
+    p3Y += 4.5;
   }
 
+  // Parâmetros construtivos em sequência contínua
+  pdf.setFillColor(241, 245, 249);
+  pdf.rect(marginX, p3Y, contentWidth, 4.8, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.0);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('PARÂMETROS CONSTRUTIVOS & INFRAESTRUTURA DA EDIFICAÇÃO (NBR 5419:2026)', marginX + 3, p3Y + 3.4);
 
+  const parametros = [
+    { param: 'Tipologia Construtiva:', valor: 'Alvenaria Convencional / Estrutura em Concreto Armado' },
+    { param: 'Topografia & Entorno:', valor: 'Terreno Urbano Plano com Edificações Vizinhas' },
+    { param: 'Nível de Proteção Dimensionado:', valor: 'Nível III / IV (NBR 5419-2:2026 - Gerenciamento de Risco)' },
+    { param: 'Métodos de Proteção Aplicáveis:', valor: 'Ângulo de Proteção (Franklin) e Condutores em Malha (Faraday)' },
+  ];
 
-  // ==========================================================
-  // SEÇÃO 5: INSTRUMENTAÇÃO TÉCNICA E PARÂMETROS NORMATIVOS (NBR 5419:2026 / NBR 5410)
-  // ==========================================================
-  onProgress?.(55, 'Gerando Seção 5: Instrumentação e Critérios Normativos...');
+  let paramY = p3Y + 4.8;
+  parametros.forEach((p, pIdx) => {
+    if (pIdx % 2 === 0) {
+      pdf.setFillColor(250, 250, 250);
+      pdf.rect(marginX, paramY, contentWidth, 4.2, 'F');
+    }
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(30, 41, 59);
+    pdf.text(p.param, marginX + 3, paramY + 3.0);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(p.valor, marginX + 55, paramY + 3.0, { maxWidth: contentWidth - 58 });
+
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setLineWidth(0.2);
+    pdf.line(marginX, paramY + 4.2, marginX + contentWidth, paramY + 4.2);
+    paramY += 4.2;
+  });
+
+  p3Y = paramY + 2.5;
+
+  // Texto de Ramo de atividade e nível de exposição
+  const exposicaoText = `A edificação é de uso ${client.ramoAtividade} com presença de ocupantes e equipamentos eletroeletrônicos e está localizada numa área de ${client.exposicaoNivel || 'baixa EXPOSIÇÃO'} a descargas atmosféricas e seus efeitos indiretos.`;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(7.0);
+  pdf.setTextColor(30, 41, 59);
+  const expLines = pdf.splitTextToSize(exposicaoText, contentWidth);
+  pdf.text(expLines, marginX, p3Y);
+  p3Y += expLines.length * 3.4 + 2.5;
+
+  // Linha sutil divisória
+  pdf.setDrawColor(226, 232, 240);
+  pdf.setLineWidth(0.3);
+  pdf.line(marginX, p3Y, marginX + contentWidth, p3Y);
+  p3Y += 3.5;
+
+  // 4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('4) HISTÓRICO DE PROBLEMAS & OCORRÊNCIAS', marginX, p3Y);
+
+  p3Y += 4.0;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(7.0);
+  pdf.setTextColor(30, 41, 59);
+
+  const hist1 = `4.1- Devido à localização e infraestrutura da edificação, constata-se: ${client.historicoQueimaOcorrencias || '2 problemas de queima de equipamentos eletroeletrônicos'}.`;
+  const histLines1 = pdf.splitTextToSize(hist1, contentWidth);
+  pdf.text(histLines1, marginX, p3Y);
+  p3Y += histLines1.length * 3.4 + 1.5;
+
+  const hist2 = `4.2- A ocorrência de problemas com equipamentos se deve ao fato de descargas nas proximidades gerarem pulsos eletromagnéticos que viajam pela rede elétrica sem blindagem suficiente. Com isso, é indispensável a instalação de supressores de surtos (DPS) coordenados nos quadros de distribuição.`;
+  const histLines2 = pdf.splitTextToSize(hist2, contentWidth);
+  pdf.text(histLines2, marginX, p3Y);
+  p3Y += histLines2.length * 3.4 + 2.0;
+
+  // ==========================================
+  // PÁGINA 4: 5) INSTRUMENTAÇÃO TÉCNICA E CRITÉRIOS DE INSPEÇÃO
+  // FLUXO CONTÍNUO: SEGUIDA DIRETAMENTE POR SEÇÃO 6 (TORRE 1)
+  // ==========================================
+  onProgress?.(58, 'Gerando Instrumentação Técnica e Vistorias...');
   pdf.addPage('a4', 'portrait');
   drawWatermark(pdf);
   drawHeaderLogo(pdf);
 
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(10.5);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text('5) INSTRUMENTAÇÃO TÉCNICA E CRITÉRIOS DE INSPEÇÃO', marginX, 36);
+  let p4Y = 36;
 
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('5) INSTRUMENTAÇÃO TÉCNICA E CRITÉRIOS DE INSPEÇÃO', marginX, p4Y);
+
+  p4Y += 4.0;
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.5);
+  pdf.setFontSize(7.0);
   pdf.setTextColor(30, 41, 59);
   const medContLines = pdf.splitTextToSize(texts.medicoesContinuidadeTexto, contentWidth);
-  pdf.text(medContLines, marginX, 41);
-
-  let instY = 41 + medContLines.length * 3.6 + 2;
+  pdf.text(medContLines, marginX, p4Y);
+  p4Y += medContLines.length * 3.4 + 2.0;
 
   // Painel com Foto do Miliohmímetro e Especificações Técnicas
+  const eqBoxH = 25.0;
   pdf.setFillColor(248, 250, 252);
   pdf.setDrawColor(203, 213, 225);
   pdf.setLineWidth(0.3);
-  pdf.roundedRect(marginX, instY, contentWidth, 38, 1, 1, 'FD');
+  pdf.roundedRect(marginX, p4Y, contentWidth, eqBoxH, 1, 1, 'FD');
 
   if (equipmentPhotoInfo?.dataUrl) {
     try {
       const { width: eqW, height: eqH } = calculateContainedDimensions(
         equipmentPhotoInfo.aspect,
-        45,
-        34
+        38,
+        21
       );
-      const eqX = marginX + 3 + (45 - eqW) / 2;
-      const eqY = instY + 2 + (34 - eqH) / 2;
+      const eqX = marginX + 3 + (38 - eqW) / 2;
+      const eqY = p4Y + 2 + (21 - eqH) / 2;
       pdf.addImage(equipmentPhotoInfo.dataUrl, equipmentPhotoInfo.format, eqX, eqY, eqW, eqH);
     } catch (e) {
       console.warn('Erro ao inserir foto do miliohmímetro no PDF:', e);
     }
   }
 
-  const eqTextX = equipmentPhotoInfo?.dataUrl ? marginX + 52 : marginX + 5;
-  const eqTextW = equipmentPhotoInfo?.dataUrl ? contentWidth - 55 : contentWidth - 10;
+  const eqTextX = equipmentPhotoInfo?.dataUrl ? marginX + 44 : marginX + 4;
+  const eqTextW = equipmentPhotoInfo?.dataUrl ? contentWidth - 47 : contentWidth - 8;
 
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8.2);
+  pdf.setFontSize(7.6);
   pdf.setTextColor(15, 23, 42);
-  pdf.text(
-    `Miliohmímetro ${texts.equipamentoModelo} - Marca: ${texts.equipamentoMarca}`,
-    eqTextX,
-    instY + 6.5
-  );
+  pdf.text(`Miliohmímetro ${texts.equipamentoModelo} - Marca: ${texts.equipamentoMarca}`, eqTextX, p4Y + 5.0);
 
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.0);
+  pdf.setFontSize(6.4);
   pdf.setTextColor(71, 85, 105);
   const eqDescLines = pdf.splitTextToSize(texts.equipamentoDescricao, eqTextW);
-  pdf.text(eqDescLines, eqTextX, instY + 11);
+  pdf.text(eqDescLines, eqTextX, p4Y + 8.5);
 
-  let eqDetY = instY + 11 + eqDescLines.length * 3.4 + 2;
+  let eqDetY = p4Y + 8.5 + eqDescLines.length * 3.0 + 1.5;
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7.0);
+  pdf.setFontSize(6.4);
   pdf.setTextColor(30, 41, 59);
   pdf.text(`Local de Aplicação: `, eqTextX, eqDetY);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(texts.medicoesLocal || 'Estruturas prediais e barramentos', eqTextX + 27, eqDetY);
+  pdf.text(texts.medicoesLocal || 'Estruturas prediais e barramentos', eqTextX + 25, eqDetY);
 
-  eqDetY += 4.0;
+  eqDetY += 3.2;
   pdf.setFont('helvetica', 'bold');
   pdf.text(`Corrente Injetada: `, eqTextX, eqDetY);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(texts.medicoesCorrenteAplicada || '10 A DC contínua', eqTextX + 25, eqDetY);
+  pdf.text(texts.medicoesCorrenteAplicada || '10 A DC contínua', eqTextX + 23, eqDetY);
 
-  eqDetY += 4.0;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`Tipo de Ensaio: `, eqTextX, eqDetY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(texts.medicoesTipoCorrente || 'Método de 4 Terminais (Kelvin)', eqTextX + 21, eqDetY);
-
-  instY += 41;
+  p4Y += eqBoxH + 2.5;
 
   // Tabela de Parâmetros Normativos NBR 5419:2026
   pdf.setFillColor(241, 245, 249);
-  pdf.rect(marginX, instY, contentWidth, 5.5, 'F');
+  pdf.rect(marginX, p4Y, contentWidth, 4.8, 'F');
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7.5);
+  pdf.setFontSize(7.0);
   pdf.setTextColor(15, 23, 42);
-  pdf.text('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)', marginX + 4, instY + 4.0);
+  pdf.text('PARÂMETROS NORMATIVOS DE CONTINUIDADE (ABNT NBR 5419:2026)', marginX + 3, p4Y + 3.4);
 
   const criteriosNormativos = [
     { item: 'Continuidade de Armaduras e Malhas', norma: 'NBR 5419-3:2026 (Item 5.3.5)', limite: '≤ 0,200 Ω (200 mΩ)', status: 'CONFORME' },
@@ -1281,67 +1130,47 @@ export const generatePdfBlob = async (
     { item: 'Estado das Caixas de Inspeção', norma: 'Aterramento & Equalização BEP', limite: 'Limpas e desobstruídas', status: conditions.caixasInspecaoLimpas ? 'CONFORME' : 'LIMPEZA PENDENTE' },
   ];
 
-  let critNormY = instY + 5.5;
+  let critNormY = p4Y + 4.8;
   criteriosNormativos.forEach((crit, cIdx) => {
     if (cIdx % 2 === 0) {
       pdf.setFillColor(250, 250, 250);
-      pdf.rect(marginX, critNormY, contentWidth, 5.2, 'F');
+      pdf.rect(marginX, critNormY, contentWidth, 4.4, 'F');
     }
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(6.8);
+    pdf.setFontSize(6.4);
     pdf.setTextColor(30, 41, 59);
-    pdf.text(crit.item, marginX + 3, critNormY + 3.8);
+    pdf.text(crit.item, marginX + 3, critNormY + 3.1);
 
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(6.8);
+    pdf.setFontSize(6.4);
     pdf.setTextColor(71, 85, 105);
-    pdf.text(crit.norma, marginX + 63, critNormY + 3.8);
+    pdf.text(crit.norma, marginX + 63, critNormY + 3.1);
 
     pdf.setFont('helvetica', 'bold');
-    pdf.text(crit.limite, marginX + 112, critNormY + 3.8);
+    pdf.text(crit.limite, marginX + 112, critNormY + 3.1);
 
-    pdf.setFont('helvetica', 'bold');
     if (crit.status === 'CONFORME' || crit.status === 'APLICADO') {
       pdf.setTextColor(22, 101, 52);
     } else {
       pdf.setTextColor(217, 119, 6);
     }
-    pdf.text(crit.status, marginX + contentWidth - 3, critNormY + 3.8, { align: 'right' });
+    pdf.text(crit.status, marginX + contentWidth - 3, critNormY + 3.1, { align: 'right' });
 
     pdf.setDrawColor(226, 232, 240);
     pdf.setLineWidth(0.2);
-    pdf.line(marginX, critNormY + 5.2, marginX + contentWidth, critNormY + 5.2);
-    critNormY += 5.2;
+    pdf.line(marginX, critNormY + 4.4, marginX + contentWidth, critNormY + 4.4);
+    critNormY += 4.4;
   });
 
-  instY = critNormY + 3.5;
-
-  // Painel de Parecer Técnico Visual da Vistoria
-  pdf.setFillColor(248, 250, 252);
-  pdf.setDrawColor(203, 213, 225);
-  pdf.setLineWidth(0.3);
-  pdf.roundedRect(marginX, instY, contentWidth, 22, 1, 1, 'FD');
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text('ANÁLISE PERICIAL DA INSPEÇÃO VISUAL IN LOCO:', marginX + 4, instY + 4.5);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(6.8);
-  pdf.setTextColor(51, 65, 85);
-  const analiseLines = pdf.splitTextToSize(texts.vistoriaSpdaAnalise, contentWidth - 8);
-  pdf.text(analiseLines, marginX + 4, instY + 8.5);
-
-  instY += 25.5;
+  p4Y = critNormY + 2.5;
 
   // Tabela dos Subsistemas Vistoriados
   pdf.setFillColor(241, 245, 249);
-  pdf.rect(marginX, instY, contentWidth, 5.5, 'F');
+  pdf.rect(marginX, p4Y, contentWidth, 4.8, 'F');
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7.5);
+  pdf.setFontSize(7.0);
   pdf.setTextColor(15, 23, 42);
-  pdf.text('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419:2026)', marginX + 4, instY + 4.0);
+  pdf.text('AVALIAÇÃO ESTRUTURAL DOS SUBSISTEMAS DO SPDA (NBR 5419:2026)', marginX + 3, p4Y + 3.4);
 
   const subsistemas = [
     { item: 'Subsistema de Captação', desc: conditions.subCapitacaoDesc || 'Mastros, pontas captoras Franklin e fitas condutoras.', status: conditions.subCapitacaoStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME') },
@@ -1350,21 +1179,21 @@ export const generatePdfBlob = async (
     { item: 'Equipotencialização Metálica', desc: conditions.subEquipotencializacaoDesc || 'Interligação de massas metálicas da cobertura e rufos.', status: conditions.subEquipotencializacaoStatus || (conditions.temPontosACorrigir ? 'REQUER AJUSTES' : 'CONFORME') },
   ];
 
-  let subY = instY + 5.5;
+  let subY = p4Y + 4.8;
   subsistemas.forEach((sub, sIdx) => {
     if (sIdx % 2 === 0) {
       pdf.setFillColor(250, 250, 250);
-      pdf.rect(marginX, subY, contentWidth, 5.2, 'F');
+      pdf.rect(marginX, subY, contentWidth, 4.4, 'F');
     }
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(6.8);
+    pdf.setFontSize(6.4);
     pdf.setTextColor(30, 41, 59);
-    pdf.text(sub.item, marginX + 3, subY + 3.8);
+    pdf.text(sub.item, marginX + 3, subY + 3.1);
 
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(6.5);
+    pdf.setFontSize(6.2);
     pdf.setTextColor(71, 85, 105);
-    pdf.text(sub.desc, marginX + 50, subY + 3.8, { maxWidth: contentWidth - 85 });
+    pdf.text(sub.desc, marginX + 50, subY + 3.1, { maxWidth: contentWidth - 85 });
 
     pdf.setFont('helvetica', 'bold');
     if (sub.status === 'CONFORME') {
@@ -1374,44 +1203,38 @@ export const generatePdfBlob = async (
     } else {
       pdf.setTextColor(220, 38, 38);
     }
-    pdf.text(sub.status, marginX + contentWidth - 3, subY + 3.8, { align: 'right' });
+    pdf.text(sub.status, marginX + contentWidth - 3, subY + 3.1, { align: 'right' });
 
     pdf.setDrawColor(226, 232, 240);
     pdf.setLineWidth(0.2);
-    pdf.line(marginX, subY + 5.2, marginX + contentWidth, subY + 5.2);
-    subY += 5.2;
+    pdf.line(marginX, subY + 4.4, marginX + contentWidth, subY + 4.4);
+    subY += 4.4;
   });
 
-  instY = subY + 3.5;
+  p4Y = subY + 2.5;
 
   // Diretriz NBR 5410 de DPS
   pdf.setFillColor(254, 243, 199);
   pdf.setDrawColor(245, 158, 11);
   pdf.setLineWidth(0.3);
-  pdf.roundedRect(marginX, instY, contentWidth, 14, 1, 1, 'FD');
+  pdf.roundedRect(marginX, p4Y, contentWidth, 13.5, 1, 1, 'FD');
 
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(7.0);
   pdf.setTextColor(146, 64, 14);
-  pdf.text('PROTEÇÃO CONTRA SURTOS EM QUADROS ELÉTRICOS (ABNT NBR 5410 / NBR 5419-4):', marginX + 4, instY + 4.2);
+  pdf.text('PROTEÇÃO CONTRA SURTOS EM QUADROS ELÉTRICOS (ABNT NBR 5410 / NBR 5419-4):', marginX + 4, p4Y + 4.2);
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(6.4);
   pdf.setTextColor(180, 83, 9);
   const dpsText = 'Todos os quadros de distribuição (QGBTs, parciais e de comando) devem possuir Dispositivos de Proteção contra Surtos (DPS) coordenados tipo 1 e tipo 2 em pleno funcionamento. A ausência de DPS deixa circuitos e edificações vulneráveis a danos catastróficos.';
-  pdf.text(pdf.splitTextToSize(dpsText, contentWidth - 8), marginX + 4, instY + 7.8);
-  instY += 16.5;
+  pdf.text(pdf.splitTextToSize(dpsText, contentWidth - 8), marginX + 4, p4Y + 7.8);
+
+  p4Y += 16.5;
 
   // ==========================================
   // SEÇÃO 6: VISTORIA E ENSAIOS TÉCNICOS POR TORRE
-  // ==========================================
-  // FORMATO POR TORRE ("VÁRIOS LAUDOS DENTRO DE UM LAUDO GERAL"):
-  // Para cada torre / bloco:
-  //   1) Pontos de Inspeção (Continuidade Elétrica com Miliohmímetro)
-  //   2) Vistoria do SPDA Existente & Captores
-  //   3) Análise dos Quadros de Energia e DPS (NBR 5410)
-  // Ocupa rigorosamente até 4 fotos por linha e até 5 linhas por página,
-  // eliminando páginas semi-vazias e aproveitando 100% da área útil do A4.
+  // FLUXO CONTÍNUO INICIANDO NA PÁGINA 4 LOGO ABAIXO DA SEÇÃO 5
   // ==========================================
   onProgress?.(68, 'Gerando Vistorias Técnicas por Torre...');
 
@@ -1419,21 +1242,31 @@ export const generatePdfBlob = async (
   const PHOTO_WIDTH_MM = 33.0;  // Formato 3:4 vertical com espaçamento lateral reduzido (33.0mm)
   const PHOTO_IMG_H = 44.0;     // Proporção estrita 3:4 vertical (33.0 * 4 / 3 = 44.0mm)
   const ROW_STEP = 50.5;        // 44.0mm imagem + 6.5mm legenda e espaçamento
-  const FOOTER_SAFE_Y = 277.0;  // Linha do rodapé está em 281.0mm (margem de 4.0mm de segurança antes do rodapé)
-  const MAX_ROWS_PER_PAGE = 5;  // Limite de 5 linhas por página com preenchimento máximo
+  const FOOTER_SAFE_Y = 277.0;  // Linha do rodapé está em 281.0mm (margem de segurança)
+  const MAX_ROWS_PER_PAGE = 5;  // Limite de 5 linhas por página
 
-  let curTowerY = 36;
+  let curTowerY = p4Y + 2.0;
   let isTowerSectionStarted = false;
   let rowsOnCurrentPage = 0;
-
-  // Aloca Seção 6 em sequência contínua se houver espaço na página anterior (sem deixar espaço vazio)
-  if (instY + 7.5 + 5.5 + PHOTO_IMG_H + 5.5 <= FOOTER_SAFE_Y) {
-    curTowerY = instY + 2.5;
-    isTowerSectionStarted = true;
-    rowsOnCurrentPage = 0;
-  }
+  let currentPageHasSection5 = true;
 
   const startTowerPage = (titleStr: string) => {
+    if (!isTowerSectionStarted) {
+      // Primeira página de vistorias aproveita o espaço restante na Página 4 abaixo de Seção 5
+      pdf.setFillColor(15, 23, 42);
+      pdf.roundedRect(marginX, curTowerY, contentWidth, 7.5, 1, 1, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8.8);
+      pdf.setTextColor(255, 255, 255);
+      pdf.text(titleStr, marginX + 4, curTowerY + 5.0);
+
+      curTowerY += 10.5;
+      rowsOnCurrentPage = 0;
+      isTowerSectionStarted = true;
+      currentPageHasSection5 = true;
+      return;
+    }
+
     pdf.addPage('a4', 'portrait');
     drawWatermark(pdf);
     drawHeaderLogo(pdf);
@@ -1447,6 +1280,8 @@ export const generatePdfBlob = async (
 
     curTowerY = 46.5;
     rowsOnCurrentPage = 0;
+    currentPageHasSection5 = false;
+    isTowerSectionStarted = true;
   };
 
   towerGroups.forEach((group, gIdx) => {
@@ -1461,13 +1296,14 @@ export const generatePdfBlob = async (
     );
 
     const towerTitle = `6.${gIdx + 1}) VISTORIA & ENSAIOS TÉCNICOS: ${group.towerName.toUpperCase()}`;
+    const maxRowsForPage = currentPageHasSection5 ? 2 : MAX_ROWS_PER_PAGE;
 
     // Só inicia nova página se a seção não começou ou se o cabeçalho + 1 linha de fotos NÃO couberem
     if (!isTowerSectionStarted) {
       startTowerPage(towerTitle);
       isTowerSectionStarted = true;
     } else {
-      if (rowsOnCurrentPage >= MAX_ROWS_PER_PAGE || curTowerY + 7.5 + 5.5 + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
+      if (rowsOnCurrentPage >= maxRowsForPage || curTowerY + 7.5 + 5.5 + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
         startTowerPage(towerTitle);
       } else {
         // Inicia a torre na mesma página em sequência contínua, preenchendo o espaço disponível
@@ -1513,8 +1349,9 @@ export const generatePdfBlob = async (
       // Pula subseções que não possuem fotos para NÃO deixar faixas ou espaços vazios
       if (sub.photos.length === 0) return;
 
+      const maxRowsForSub = currentPageHasSection5 ? 2 : MAX_ROWS_PER_PAGE;
       // Só quebra a página se realmente não couber o título da subseção e a primeira linha de fotos
-      if (rowsOnCurrentPage >= MAX_ROWS_PER_PAGE || curTowerY + 5.5 + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
+      if (rowsOnCurrentPage >= maxRowsForSub || curTowerY + 5.5 + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
         startTowerPage(`${towerTitle} — ${sub.title} (CONTINUAÇÃO)`);
       }
 
@@ -1530,8 +1367,9 @@ export const generatePdfBlob = async (
       // Renderizar fotos em linhas de até 4 colunas preenchendo a página ao máximo
       const photoChunks = chunkArray(sub.photos, PHOTO_COLS);
       photoChunks.forEach((chunk) => {
+        const maxRowsInChunk = currentPageHasSection5 ? 2 : MAX_ROWS_PER_PAGE;
         // Só quebra a página se a foto e sua legenda realmente forem ultrapassar a margem de segurança do rodapé
-        if (rowsOnCurrentPage >= MAX_ROWS_PER_PAGE || curTowerY + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
+        if (rowsOnCurrentPage >= maxRowsInChunk || curTowerY + PHOTO_IMG_H + 5.5 > FOOTER_SAFE_Y) {
           startTowerPage(`${towerTitle} — ${sub.title} (CONTINUAÇÃO)`);
         }
 
@@ -1608,7 +1446,7 @@ export const generatePdfBlob = async (
   onProgress?.(94, 'Gerando Recomendações Técnicas, Conclusão & Assinatura...');
 
   let finalY: number;
-  if (curTowerY + 115 <= FOOTER_SAFE_Y && rowsOnCurrentPage <= 2) {
+  if (!currentPageHasSection5 && curTowerY + 115 <= FOOTER_SAFE_Y && rowsOnCurrentPage <= 2) {
     // Se a última torre terminou no início/meio da página e sobra espaço, aloca em sequência contínua
     finalY = curTowerY + 6;
   } else {
