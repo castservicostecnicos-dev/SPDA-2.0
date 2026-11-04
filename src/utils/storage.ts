@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SpdaReport, PhotoSlot } from '../types/spda';
+import { SpdaReport, PhotoSlot, TechnicalTexts, InspectionConditions } from '../types/spda';
+import { defaultSpdaReport } from '../data/defaultReport';
 import { loadSyncJournal } from './photoDeviceSync';
 import {
   openMasterDatabase,
@@ -74,14 +75,19 @@ export function hasUserContent(report?: SpdaReport | null): boolean {
   if (photoCount > 0) return true;
   if (report.client?.name && report.client.name.trim() !== '') return true;
   if (report.client?.local && report.client.local.trim() !== '') return true;
-  if (report.torresData && Object.keys(report.torresData).length > 0) return true;
+  if (report.texts?.vistoriaSpdaAnalise && report.texts.vistoriaSpdaAnalise.trim() !== '') return true;
+  if (report.texts?.analiseQuadrosConclusao && report.texts.analiseQuadrosConclusao.trim() !== '') return true;
+  if (report.texts?.recomendacoes && report.texts.recomendacoes.length > 0) return true;
+  if (report.texts?.conclusaoFinal && report.texts.conclusaoFinal.trim() !== '') return true;
+  if (report.conditions?.temPontosACorrigir !== undefined) return true;
+  if (report.torresData && Object.keys(report.torresData).filter((k) => k !== 'Área Comum').length > 0) return true;
   return false;
 }
 
 /**
  * Salva o laudo com segurança absoluta e sem travar o navegador:
- * 1. Chave ativa no IndexedDB (leve, rápido, ~5ms)
- * 2. Cópia no banco mestre relacional (Laudos, Condomínios e Clientes) apenas em fullSync
+ * 1. Chave ativa no IndexedDB E chave por ID do laudo (instantâneo, ~2ms)
+ * 2. Cópia no banco mestre relacional (Laudos, Condomínios e Clientes)
  * 3. Fotos persistidas no store de fotos de campo
  * NUNCA salva fotos em localStorage (elimina QuotaExceededError e memory crash no Chrome)
  */
@@ -95,21 +101,22 @@ export async function saveReportToStorage(
   const isFullSync = options.fullSync ?? false;
 
   try {
-    // 1. Salva na chave ativa do IndexedDB de forma rápida e leve
+    // 1. Salva na chave ativa E na chave específica por ID no IndexedDB
     const db = await openDatabase();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
+      // Sempre grava a chave ativa
       store.put(cleaned, REPORT_KEY);
 
-      // backups secundários apenas em fullSync para não sobrecarregar I/O do celular
-      if (isFullSync) {
-        if (cleaned.id) {
-          store.put(cleaned, `report_${cleaned.id}`);
-        }
-        if (hasUserContent(cleaned)) {
-          store.put(cleaned, BACKUP_REPORT_KEY);
-        }
+      // Sempre grava a chave com ID deste documento para que ao reabrir de "Meus Laudos" NADA se perca
+      if (cleaned.id) {
+        store.put(cleaned, `report_${cleaned.id}`);
+      }
+
+      // Snapshot de backup para segurança adicional
+      if (hasUserContent(cleaned)) {
+        store.put(cleaned, BACKUP_REPORT_KEY);
       }
 
       tx.oncomplete = () => resolve();
@@ -127,11 +134,11 @@ export async function saveReportToStorage(
       // ignore
     }
 
-    // 3. Atualiza banco mestre relacional apenas em fullSync (salvamento mestre ou a cada 60s)
-    if (isFullSync) {
-      saveLaudoRecord(cleaned).catch(() => {});
-      syncCondominioFromReport(cleaned).catch(() => {});
+    // 3. Atualiza banco mestre relacional (sempre mantém o laudo e metadados sincronizados)
+    saveLaudoRecord(cleaned).catch(() => {});
+    syncCondominioFromReport(cleaned).catch(() => {});
 
+    if (isFullSync) {
       if (cleaned.client?.name) {
         saveCliente({
           name: cleaned.client.name,
@@ -641,8 +648,32 @@ export async function loadSavedReportById(id: string): Promise<SpdaReport | null
     const rep = await new Promise<SpdaReport | null>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
+
+      if (id === 'active_spda_report' || id === REPORT_KEY) {
+        const req = store.get(REPORT_KEY);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+        return;
+      }
+
       const req = store.get(`report_${id}`);
-      req.onsuccess = () => resolve(req.result || null);
+      req.onsuccess = () => {
+        if (req.result) {
+          resolve(req.result);
+        } else {
+          // Fallback: se não encontrou por report_${id}, tenta carregar a chave ativa se o ID corresponder
+          const activeReq = store.get(REPORT_KEY);
+          activeReq.onsuccess = () => {
+            const activeVal = activeReq.result as SpdaReport;
+            if (activeVal && (activeVal.id === id || !id)) {
+              resolve(activeVal);
+            } else {
+              resolve(null);
+            }
+          };
+          activeReq.onerror = () => resolve(null);
+        }
+      };
       req.onerror = () => reject(req.error);
     });
 
@@ -667,6 +698,9 @@ export async function loadSavedReportById(id: string): Promise<SpdaReport | null
         quadrosPhotos: [],
         localPhotos: [],
         torreAtual: masterLaudo.torreAtual || 'Torre 1',
+        torresData: masterLaudo.torresData || {},
+        digitalSignature: masterLaudo.digitalSignature,
+        equipmentPhotoUrl: masterLaudo.equipmentPhotoUrl,
         lastSyncedAt: masterLaudo.lastSyncedAt,
         lastSyncedFormatted: masterLaudo.lastSyncedFormatted,
       };
@@ -919,8 +953,34 @@ function sanitizeLoadedReport(report: SpdaReport): SpdaReport {
     };
   };
 
+  // Garante que todos os textos técnicos, pareceres e normas inseridos pelo usuário sejam estritamente preservados
+  const mergedTexts: TechnicalTexts = {
+    ...defaultSpdaReport.texts,
+    ...(report.texts || {}),
+    referenciasNormativas:
+      Array.isArray(report.texts?.referenciasNormativas) && report.texts.referenciasNormativas.length > 0
+        ? report.texts.referenciasNormativas
+        : defaultSpdaReport.texts.referenciasNormativas,
+    dicionario:
+      Array.isArray(report.texts?.dicionario) && report.texts.dicionario.length > 0
+        ? report.texts.dicionario
+        : defaultSpdaReport.texts.dicionario,
+    recomendacoes:
+      Array.isArray(report.texts?.recomendacoes)
+        ? report.texts.recomendacoes
+        : (defaultSpdaReport.texts.recomendacoes || []),
+  };
+
+  // Garante que todas as condições de inspeção e avaliação de subsistemas sejam preservadas
+  const mergedConditions: InspectionConditions = {
+    ...defaultSpdaReport.conditions,
+    ...(report.conditions || {}),
+  };
+
   const cleaned: SpdaReport = {
     ...report,
+    texts: mergedTexts,
+    conditions: mergedConditions,
     spdaPhotos: (report.spdaPhotos || []).filter((p: PhotoSlot) => !isSvgMock(p.url)).map(cleanPhotoSlot),
     measurementPhotos: (report.measurementPhotos || []).filter((p: PhotoSlot) => !isSvgMock(p.url)).map(cleanPhotoSlot),
     quadrosPhotos: (report.quadrosPhotos || []).filter((p: PhotoSlot) => !isSvgMock(p.url)).map(cleanPhotoSlot),

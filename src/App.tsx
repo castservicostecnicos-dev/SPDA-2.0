@@ -64,6 +64,7 @@ import {
   generateSequentialReportTitle,
   deleteSavedReportById,
   getLastSavedTimeFormatted,
+  hasUserContent,
 } from './utils/storage';
 import { importReportFile } from './utils/documentImporter';
 
@@ -421,18 +422,43 @@ export default function App() {
 
   // Handlers for inspection conditions
   const handleUpdateConditions = (updated: Partial<InspectionConditions>) => {
-    setReport((prev) => ({
-      ...prev,
-      conditions: { ...prev.conditions, ...updated },
-    }));
+    setReport((prev) => {
+      const mergedConditions: InspectionConditions = { ...prev.conditions, ...updated };
+      const currentTower = prev.torreAtual || 'Torre 1';
+      const updatedTorresData = {
+        ...(prev.torresData || {}),
+        [currentTower]: {
+          ...(prev.torresData?.[currentTower] || {
+            id: currentTower.toLowerCase().replace(/\s+/g, '-'),
+            nome: currentTower,
+            spdaPhotos: prev.spdaPhotos,
+            measurementPhotos: prev.measurementPhotos,
+            quadrosPhotos: prev.quadrosPhotos,
+            localPhotos: prev.localPhotos,
+          }),
+          conditions: mergedConditions,
+        },
+      };
+      const updatedReport: SpdaReport = {
+        ...prev,
+        conditions: mergedConditions,
+        torresData: updatedTorresData,
+      };
+      saveReportToStorage(updatedReport).catch(() => {});
+      return updatedReport;
+    });
   };
 
   // Handlers for technical texts
   const handleUpdateTexts = (updated: Partial<TechnicalTexts>) => {
-    setReport((prev) => ({
-      ...prev,
-      texts: { ...prev.texts, ...updated },
-    }));
+    setReport((prev) => {
+      const updatedReport: SpdaReport = {
+        ...prev,
+        texts: { ...prev.texts, ...updated },
+      };
+      saveReportToStorage(updatedReport).catch(() => {});
+      return updatedReport;
+    });
   };
 
   // Handlers para Fotos (atualização limpa e reativa; a persistência é gerenciada com segurança pelo auto-save debounced)
@@ -576,10 +602,15 @@ export default function App() {
       quadrosPhotos: targetTowerData ? [...targetTowerData.quadrosPhotos] : [],
       localPhotos: newLocalPhotos,
       equipmentPhotoUrl: newEquipmentUrl,
-      conditions: targetTowerData?.conditions ? { ...targetTowerData.conditions } : { ...report.conditions },
+      // Preserva sempre o parecer técnico e condições de inspeção editadas
+      conditions: targetTowerData?.conditions
+        ? { ...report.conditions, ...targetTowerData.conditions }
+        : { ...report.conditions },
     };
 
     setReport(updatedReport);
+    reportRef.current = updatedReport;
+    saveReportToStorage(updatedReport).catch(() => {});
     setHasUnsavedChanges(true);
     setSaveToast(`Vistoria alternada para: ${newTower}`);
     setTimeout(() => setSaveToast(null), 3500);
@@ -811,7 +842,7 @@ export default function App() {
         current.quadrosPhotos.length +
         current.localPhotos.length;
 
-      if (current.client?.name || currentPhotos > 0) {
+      if (hasUserContent(current)) {
         try {
           const backupTitle = current.title && !current.title.startsWith('Laudo de Inspeção SPDA')
             ? `${current.title} (Cópia Salva)`

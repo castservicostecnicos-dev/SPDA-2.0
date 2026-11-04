@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { InspectionConditions, TechnicalTexts, ClientData, SubsystemStatus } from '../types/spda';
 import {
   CheckCircle2,
@@ -13,6 +13,8 @@ import {
   AlertCircle,
   FileCheck,
   Sparkles,
+  Save,
+  Check,
 } from 'lucide-react';
 
 interface InspectionConditionsEditorProps {
@@ -32,6 +34,14 @@ export const InspectionConditionsEditor: React.FC<InspectionConditionsEditorProp
   onUpdateClient,
   onUpdateTexts,
 }) => {
+  const [saveToast, setSaveToast] = useState(false);
+
+  const handleManualSave = () => {
+    onUpdateConditions({});
+    onUpdateTexts({});
+    setSaveToast(true);
+    setTimeout(() => setSaveToast(false), 3000);
+  };
   // Pre-defined standard corrective items from the original report
   const defaultRecommendations = [
     'Corrigir para que toda massa metálica da parte superior seja aterrada e equipotencializadas ao sistema.',
@@ -52,7 +62,7 @@ export const InspectionConditionsEditor: React.FC<InspectionConditionsEditorProp
     });
 
     if (!tem) {
-      // If 100% compliant, set conform recommendations or clear
+      // Se estiver 100% conforme, define recomendações de conformidade
       onUpdateTexts({
         recomendacoes: [
           'Manter inspeções visuais anuais conforme exigido pela ABNT NBR 5419-3:2026.',
@@ -64,12 +74,17 @@ export const InspectionConditionsEditor: React.FC<InspectionConditionsEditorProp
           'Conforme descrito no decorrer deste relatório, podemos concluir que as áreas inspecionadas encontram-se em condições técnicas plenamente adequadas e satisfatórias no que se refere ao Sistema de Proteção Contra Descargas Atmosféricas segundo a norma NBR 5419:2026. As malhas de aterramento e captores atendem aos projetos executivos e normas vigentes. Este é meu parecer sob a ART em anexo.',
       });
     } else {
-      // Restore default recommendations from the standard report
+      // PRESERVA as recomendações que o usuário já tiver escrito! Não substitui se já houver itens cadastrados
+      const currentRecs = texts.recomendacoes && texts.recomendacoes.length > 0
+        ? texts.recomendacoes
+        : defaultRecommendations;
       onUpdateTexts({
-        recomendacoes: defaultRecommendations,
+        recomendacoes: currentRecs,
         recomendacoesTextoFinal:
+          texts.recomendacoesTextoFinal ||
           'Fazer a correção de todos os itens apontados neste relatório, de forma ao sistema operar em sua perfeita harmonia.',
         conclusaoFinal:
+          texts.conclusaoFinal ||
           'Conforme descrito no decorrer deste relatório, excluindo-se as observações efetuadas neste documento, podemos concluir que as áreas inspecionadas na relação anexa, estão em condições técnicas adequadas e satisfatórias no que se refere ao Sistema de Proteção Contra Descargas Atmosféricas da norma NBR 5419:2026, quanto aos aspectos de instalação e segurança. Por fim, concluo que as malhas de aterramento e as malhas superiores do sistema de proteção contra descargas atmosféricas em análise atendem aos requisitos dos projetos executivos e normas vigentes citadas no item 01 deste relatório. Este é meu parecer sob a ART em anexo.',
       });
     }
@@ -188,6 +203,41 @@ export const InspectionConditionsEditor: React.FC<InspectionConditionsEditorProp
 
   return (
     <div className="space-y-6">
+      {/* Top action bar: Salvar Parecer */}
+      <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">
+              Parecer Técnico & Avaliação dos Subsistemas (NBR 5419:2026)
+            </h3>
+            <p className="text-xs text-slate-500">
+              Todos os apontamentos, condições e recomendações são salvos permanentemente no documento.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {saveToast && (
+            <span className="flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-lg animate-bounce">
+              <Check className="w-4 h-4 text-emerald-600" /> Parecer técnico salvo no documento!
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={handleManualSave}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
+            title="Salva as condições técnicas, não conformidades e parecer no laudo ativo"
+          >
+            <Save className="w-3.5 h-3.5" />
+            SALVAR PARECER NO LAUDO
+          </button>
+        </div>
+      </div>
+
       {/* 1. SELETOR MESTRE: TEM OU NÃO TEM PONTO PARA CORRIGIR */}
       <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-6">
         <h3 className="text-base font-bold text-slate-900 mb-2">

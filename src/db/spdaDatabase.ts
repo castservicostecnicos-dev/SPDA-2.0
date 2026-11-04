@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ClientData, CompanyData, InspectionConditions, TechnicalTexts, PhotoSlot, SpdaReport } from '../types/spda';
+import { ClientData, CompanyData, InspectionConditions, TechnicalTexts, PhotoSlot, SpdaReport, TowerData } from '../types/spda';
 
 export interface CondominioRecord {
   id: string;
@@ -55,6 +55,9 @@ export interface LaudoRecord {
   texts: TechnicalTexts;
   torreAtual: string;
   torresNomes: string[];
+  torresData?: Record<string, TowerData>;
+  digitalSignature?: any;
+  equipmentPhotoUrl?: string;
   photoCount: number;
   photoSummary?: {
     spda: number;
@@ -412,6 +415,9 @@ export async function saveLaudoRecord(report: SpdaReport): Promise<LaudoRecord> 
     texts: report.texts,
     torreAtual: report.torreAtual || 'Torre 1',
     torresNomes: report.client?.torresNomes || ['Torre 1'],
+    torresData: report.torresData,
+    digitalSignature: report.digitalSignature,
+    equipmentPhotoUrl: report.equipmentPhotoUrl,
     photoCount: totalPhotos,
     photoSummary,
     lastSyncedAt: report.lastSyncedAt,
