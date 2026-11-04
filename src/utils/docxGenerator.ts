@@ -112,21 +112,32 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
 const TOTAL_WIDTH_TWIPS = 9638;
 const MAX_DOCX_PRINTABLE_WIDTH_PT = 480; // 480 pt * 20 = 9600 twips <= 9638 twips (rigorosamente dentro das margens)
 const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips = 120.45 pt
-const PHOTO_GRID_WIDTH_PT = 95; // 33.5mm exatos a 72 pt/in (formato 3:4 vertical)
-const PHOTO_GRID_HEIGHT_PT = 127; // 44.67mm exatos a 72 pt/in (formato 3:4 vertical: 95/127 ≈ 3/4)
+const PHOTO_GRID_WIDTH_PT = 104; // 36.7mm exatos a 72 pt/in (formato 3:4 vertical seguindo fielmente o modelo do PDF)
+const PHOTO_GRID_HEIGHT_PT = 138; // 48.7mm exatos a 72 pt/in (formato 3:4 vertical seguindo fielmente o modelo do PDF: 104/138 ≈ 3/4)
 
 const NO_BORDER = {
   style: BorderStyle.NONE,
   size: 0,
-  color: 'auto',
+  color: 'FFFFFF',
 };
 
-const BORDER_NONE_OBJ = {
+const TABLE_BORDER_NONE_OBJ = {
+  top: NO_BORDER,
+  bottom: NO_BORDER,
+  left: NO_BORDER,
+  right: NO_BORDER,
+  insideHorizontal: NO_BORDER,
+  insideVertical: NO_BORDER,
+};
+
+const CELL_BORDER_NONE_OBJ = {
   top: NO_BORDER,
   bottom: NO_BORDER,
   left: NO_BORDER,
   right: NO_BORDER,
 };
+
+const BORDER_NONE_OBJ = CELL_BORDER_NONE_OBJ;
 
 const LIGHT_BORDER = {
   style: BorderStyle.SINGLE,
@@ -383,9 +394,9 @@ function createPhotoGridTable(
         cells.push(
           new TableCell({
             width: { size: COL_WIDTH_4_TWIPS, type: WidthType.DXA },
-            margins: { top: 30, bottom: 70, left: 30, right: 30 },
+            margins: { top: 15, bottom: 45, left: 15, right: 15 },
             verticalAlign: VerticalAlign.TOP,
-            borders: BORDER_NONE_OBJ,
+            borders: CELL_BORDER_NONE_OBJ,
             children: cellChildren,
           })
         );
@@ -394,7 +405,7 @@ function createPhotoGridTable(
         cells.push(
           new TableCell({
             width: { size: COL_WIDTH_4_TWIPS, type: WidthType.DXA },
-            borders: BORDER_NONE_OBJ,
+            borders: CELL_BORDER_NONE_OBJ,
             children: [new Paragraph({ children: [] })],
           })
         );
@@ -407,7 +418,7 @@ function createPhotoGridTable(
   return new Table({
     width: { size: TOTAL_WIDTH_TWIPS, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
-    borders: BORDER_NONE_OBJ,
+    borders: TABLE_BORDER_NONE_OBJ,
     rows,
   });
 }
@@ -693,9 +704,9 @@ export async function generateDocxBlob(
     signatureJpeg,
   ] = await Promise.all([
     Promise.all(localPhotos.map((p) => loadUncroppedPhoto(p.url))),
-    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, p.hasRedCircleMarker ?? true))),
-    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, false))),
-    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, p.hasRedCircleMarker ?? false))),
+    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 600, 800, p.hasRedCircleMarker ?? true))),
+    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 600, 800, false))),
+    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 600, 800, p.hasRedCircleMarker ?? false))),
     loadUncroppedPhoto(report.equipmentPhotoUrl),
     processHeaderLogo(company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL, 45, 18, 192, 8.5),
     report.digitalSignature?.enabled && report.digitalSignature.imageUrl
@@ -1406,7 +1417,7 @@ export async function generateDocxBlob(
     if (group.measurementPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.1) PONTOS DE ENSAIO DE CONTINUIDADE ÔHMICA (MILIOHMÍMETRO)`),
-        createPhotoGridTable(group.measurementPhotos, photoJpegMap, isMultiTower, true, 98)
+        createPhotoGridTable(group.measurementPhotos, photoJpegMap, isMultiTower, true, PHOTO_GRID_HEIGHT_PT)
       );
       docxPhotosRenderedSoFar += group.measurementPhotos.length;
     }

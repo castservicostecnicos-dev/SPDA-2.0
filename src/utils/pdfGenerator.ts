@@ -76,7 +76,7 @@ export async function safeJpegDataUrl(url?: string, width = 540, height = 230, f
           }
 
           ctx.drawImage(img, 0, 0, img.width, img.height, dx, dy, dw, dh);
-          const out = canvas.toDataURL('image/jpeg', 0.96);
+          const out = canvas.toDataURL('image/jpeg', 0.80);
           disposeCanvas(canvas);
           img.src = '';
           resolve(out);
@@ -111,9 +111,8 @@ export interface UncroppedPhotoData {
 }
 
 /**
- * Carrega a foto original enviada pelo usuário SEM redimensionar e SEM cortar.
- * Preserva 100% da imagem na sua proporção nativa para que seja inserida no laudo
- * (PDF e DOCX) exatamente da mesma forma como foi enviada ao sistema.
+ * Carrega a foto original enviada pelo usuário SEM distorcer e SEM cortar,
+ * redimensionando apenas se exceder 1600px para manter o arquivo leve e veloz.
  */
 export async function loadUncroppedPhoto(url?: string): Promise<UncroppedPhotoData | null> {
   if (!url) return null;
@@ -131,45 +130,49 @@ export async function loadUncroppedPhoto(url?: string): Promise<UncroppedPhotoDa
     img.onload = () => {
       clearTimeout(timer);
       try {
-        const width = img.naturalWidth || img.width || 800;
-        const height = img.naturalHeight || img.height || 600;
-        const aspect = width / height;
+        const origWidth = img.naturalWidth || img.width || 800;
+        const origHeight = img.naturalHeight || img.height || 600;
+        const aspect = origWidth / origHeight;
 
-        // Se já for data URL JPEG ou PNG, usa diretamente preservando 100% dos bytes originais
-        if (url.startsWith('data:image/jpeg') || url.startsWith('data:image/jpg')) {
+        const maxDim = 1600;
+        let targetW = origWidth;
+        let targetH = origHeight;
+        const needsResize = origWidth > maxDim || origHeight > maxDim;
+
+        if (needsResize) {
+          if (origWidth >= origHeight) {
+            targetW = maxDim;
+            targetH = Math.round((origHeight * maxDim) / origWidth);
+          } else {
+            targetH = maxDim;
+            targetW = Math.round((origWidth * maxDim) / origHeight);
+          }
+        }
+
+        // Se já for JPEG razoavelmente leve (< 450KB) e não precisa redimensionar, usa direto
+        if (!needsResize && url.length < 450000 && (url.startsWith('data:image/jpeg') || url.startsWith('data:image/jpg'))) {
           resolve({
             dataUrl: url,
-            width,
-            height,
+            width: origWidth,
+            height: origHeight,
             aspect,
             format: 'JPEG',
           });
           return;
         }
 
-        if (url.startsWith('data:image/png')) {
-          resolve({
-            dataUrl: url,
-            width,
-            height,
-            aspect,
-            format: 'PNG',
-          });
-          return;
-        }
-
-        // Para blob, svg, webp ou url externa, desenha na resolução nativa 1:1 sem redimensionar nem cortar
+        // Desenha no canvas otimizado para manter o arquivo do laudo leve
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = targetW;
+        canvas.height = targetH;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           disposeCanvas(canvas);
           img.src = '';
           resolve({
             dataUrl: url,
-            width,
-            height,
+            width: origWidth,
+            height: origHeight,
             aspect,
             format: 'JPEG',
           });
@@ -177,23 +180,23 @@ export async function loadUncroppedPhoto(url?: string): Promise<UncroppedPhotoDa
         }
 
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
+        ctx.fillRect(0, 0, targetW, targetH);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, width, height);
+        ctx.drawImage(img, 0, 0, targetW, targetH);
 
-        const safeDataUrl = canvas.toDataURL('image/jpeg', 0.96);
+        const safeDataUrl = canvas.toDataURL('image/jpeg', 0.82);
         disposeCanvas(canvas);
         img.src = '';
         resolve({
           dataUrl: safeDataUrl,
-          width,
-          height,
+          width: targetW,
+          height: targetH,
           aspect,
           format: 'JPEG',
         });
       } catch (err) {
-        console.error('Erro ao processar foto original sem corte:', err);
+        console.error('Erro ao processar foto original:', err);
         img.src = '';
         resolve(null);
       }
@@ -254,8 +257,8 @@ export function calculateContainedDimensions(
  */
 export async function processPhotoForPdf(
   photo: PhotoSlot,
-  targetWidth = 1200, // Resolução gráfica em alta definição (formato 3:4 vertical)
-  targetHeight = 1600,
+  targetWidth = 600, // Resolução gráfica em alta definição otimizada (423 DPI em 36x48mm no papel)
+  targetHeight = 800,
   allowCircle = true
 ): Promise<string> {
   if (!photo?.url) return '';
@@ -337,20 +340,20 @@ export async function processPhotoForPdf(
           // Outer red circle matching UI (#dc2626)
           ctx.beginPath();
           ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
-          ctx.lineWidth = Math.max(3, targetWidth * 0.009);
+          ctx.lineWidth = Math.max(2.5, targetWidth * 0.012);
           ctx.strokeStyle = '#dc2626';
           ctx.stroke();
 
           // Inner center point matching CircleFocusModal
           ctx.beginPath();
-          ctx.arc(cx, cy, Math.max(2, targetWidth * 0.0045), 0, 2 * Math.PI);
+          ctx.arc(cx, cy, Math.max(2, targetWidth * 0.006), 0, 2 * Math.PI);
           ctx.fillStyle = '#dc2626';
           ctx.fill();
 
           ctx.restore();
         }
 
-        const out = canvas.toDataURL('image/jpeg', 0.96);
+        const out = canvas.toDataURL('image/jpeg', 0.80);
         disposeCanvas(canvas);
         img.src = '';
         resolve(out);
@@ -593,9 +596,9 @@ export const generatePdfBlob = async (
     headerLogoLayout,
   ] = await Promise.all([
     Promise.all(localPhotos.map((p) => loadUncroppedPhoto(p.url))),
-    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, p.hasRedCircleMarker ?? true))),
-    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, false))),
-    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 1200, 1600, p.hasRedCircleMarker ?? false))),
+    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 600, 800, p.hasRedCircleMarker ?? true))),
+    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 600, 800, false))),
+    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 600, 800, p.hasRedCircleMarker ?? false))),
     loadUncroppedPhoto(equipmentPhotoUrl),
     processHeaderLogo(report.company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL),
   ]);
@@ -1239,9 +1242,9 @@ export const generatePdfBlob = async (
   onProgress?.(68, 'Gerando Vistorias Técnicas por Torre...');
 
   const PHOTO_COLS = 4;
-  const PHOTO_WIDTH_MM = 33.0;  // Formato 3:4 vertical com espaçamento lateral reduzido (33.0mm)
-  const PHOTO_IMG_H = 44.0;     // Proporção estrita 3:4 vertical (33.0 * 4 / 3 = 44.0mm)
-  const ROW_STEP = 50.5;        // 44.0mm imagem + 6.5mm legenda e espaçamento
+  const PHOTO_WIDTH_MM = 36.0;  // Formato 3:4 vertical com tamanho aumentado (36.0mm)
+  const PHOTO_IMG_H = 48.0;     // Proporção 3:4 vertical (36.0 * 4 / 3 = 48.0mm)
+  const ROW_STEP = 54.0;        // 48.0mm imagem + 6.0mm legenda e espaçamento
   const FOOTER_SAFE_Y = 277.0;  // Linha do rodapé está em 281.0mm (margem de segurança)
   const MAX_ROWS_PER_PAGE = 5;  // Limite de 5 linhas por página
 

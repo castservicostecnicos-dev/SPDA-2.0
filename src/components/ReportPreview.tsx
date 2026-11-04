@@ -113,7 +113,7 @@ function paginateTowerGroups(groups: TowerInspectionGroup[], hasSection5AtTop = 
   const allPages: TowerInspectionPage[] = [];
   const MAX_ROWS_PER_PAGE = 5; // Limite de 5 linhas por página
   const MAX_PAGE_CONTENT_MM = 248; // Limite vertical seguro preenchendo a página ao máximo sem sobrepor o rodapé
-  const ROW_HEIGHT_MM = 50.5;     // Altura de 1 linha de 4 fotos 3:4 vertical (44mm foto + legenda e espaçamento vertical)
+  const ROW_HEIGHT_MM = 54.0;     // Altura de 1 linha de 4 fotos 3:4 vertical (48mm foto + legenda e espaçamento vertical)
   const TOWER_HEADER_MM = 8.0;
   const SUBSECTION_HEADER_MM = 6.0;
   const SECTION5_HEIGHT_MM = 120.0;
@@ -592,9 +592,9 @@ function paginateTowerGroups(groups: TowerInspectionGroup[], hasSection5AtTop = 
                     <div
                       key={photo.id || phIdx}
                       className="flex flex-col items-center flex-shrink-0"
-                      style={{ width: '42mm' }}
+                      style={{ width: '42.5mm' }}
                     >
-                      <div className="w-[33mm] h-[44mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
+                      <div className="w-[36mm] h-[48mm] bg-slate-100 border border-gray-300 rounded overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow-2xs">
                         <img
                           src={photo.url}
                           alt={cap || `Foto ${phIdx + 1}`}
