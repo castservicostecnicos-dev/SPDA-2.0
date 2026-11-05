@@ -106,19 +106,26 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
 
 // ============================================================================
 // CONSTANTES DE LAYOUT & ESTILOS A4 IDÊNTICOS AO PDF
-// Largura útil A4 com margens de 20mm (1134 twips de cada lado) = 170mm = 9638 twips = 481.9 pt.
-// Limite máximo para qualquer imagem no Word = 480 pt (garante que NUNCA ultrapasse as margens).
+// Largura útil A4 com margens de 20mm (1134 twips de cada lado) = 170mm = 9638 twips.
+// No pacote 'docx' (ImageRun), a largura e altura da transformação são em PIXELS A 96 DPI:
+// 1 polegada = 25.4 mm = 96 px. Portanto, 1 mm = 3.779528 px.
+// 170 mm úteis = 170 * (96 / 25.4) = 642 px.
 // ============================================================================
 const TOTAL_WIDTH_TWIPS = 9638;
-const MAX_DOCX_PRINTABLE_WIDTH_PT = 480; // 480 pt * 20 = 9600 twips <= 9638 twips (rigorosamente dentro das margens)
-const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips = 120.45 pt
-const PHOTO_GRID_WIDTH_PT = 104; // 36.7mm exatos a 72 pt/in (formato 3:4 vertical seguindo fielmente o modelo do PDF)
-const PHOTO_GRID_HEIGHT_PT = 138; // 48.7mm exatos a 72 pt/in (formato 3:4 vertical seguindo fielmente o modelo do PDF: 104/138 ≈ 3/4)
+const COL_WIDTH_4_TWIPS = Math.floor(TOTAL_WIDTH_TWIPS / 4); // 2409 twips (42.5 mm por coluna)
+const DOCX_CONTENT_WIDTH_PX = 642; // 170 mm exatos a 96 DPI (largura total útil da página de margem a margem)
+
+// Grade de 4 Fotos: No PDF temos 38.0mm de largura por 50.6mm de altura (proporção 3:4 vertical).
+// Em 96 DPI no Word:
+// 38.0 mm * (96 / 25.4) = 143.62 px -> 144 px (38.1 mm exatos na impressão do Word)
+// 50.66 mm * (96 / 25.4) = 191.49 px -> 192 px (50.8 mm exatos na impressão do Word, mantendo rigorosamente a proporção 3:4)
+const PHOTO_GRID_WIDTH_PX = 144;
+const PHOTO_GRID_HEIGHT_PX = 192;
 
 const NO_BORDER = {
   style: BorderStyle.NONE,
   size: 0,
-  color: 'FFFFFF',
+  color: 'auto',
 };
 
 const TABLE_BORDER_NONE_OBJ = {
@@ -249,15 +256,15 @@ function createDataListParagraphs(rowsData: Array<[string, string]>): Paragraph[
 
 /**
  * Cria a grade de fotos rigorosamente alinhada em 4 colunas no Word (.docx),
- * idêntica à visualização do PDF (38.5mm x 48.0mm de proporção fixa, corte CSS object-cover,
- * e círculos de foco vermelhos gravados diretamente nas imagens).
+ * idêntica à visualização do PDF (38.1mm x 50.8mm de proporção 3:4 vertical, corte CSS object-cover,
+ * e círculos de foco vermelhos gravados diretamente nas imagens sem nenhuma borda de tabela visível).
  */
 function createPhotoGridTable(
   photos: PhotoSlot[],
   processedJpegs: string[] | Map<string, string>,
   isMultiTower: boolean,
   showMeasurement = false,
-  imgHeightPt = PHOTO_GRID_HEIGHT_PT
+  imgHeightPx = PHOTO_GRID_HEIGHT_PX
 ): Table {
   const rows: TableRow[] = [];
   const chunkSize = 4;
@@ -293,13 +300,13 @@ function createPhotoGridTable(
           cellChildren.push(
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              spacing: { before: 20, after: 20 },
+              spacing: { before: 10, after: 15 },
               children: [
                 new ImageRun({
                   data: imageBytes,
                   transformation: {
-                    width: PHOTO_GRID_WIDTH_PT, // 38.5mm exatos (109 pt)
-                    height: imgHeightPt, // Altura proporcional especificada
+                    width: PHOTO_GRID_WIDTH_PX, // 38.1mm exatos a 96 DPI (fiel ao laudo PDF)
+                    height: imgHeightPx, // 50.8mm exatos a 96 DPI (proporção 3:4 vertical fiel ao laudo PDF)
                   },
                   type: 'jpg',
                 }),
@@ -704,9 +711,9 @@ export async function generateDocxBlob(
     signatureJpeg,
   ] = await Promise.all([
     Promise.all(localPhotos.map((p) => loadUncroppedPhoto(p.url))),
-    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 600, 800, p.hasRedCircleMarker ?? true))),
-    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 600, 800, false))),
-    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 600, 800, p.hasRedCircleMarker ?? false))),
+    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 750, 1000, p.hasRedCircleMarker ?? true))),
+    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 750, 1000, false))),
+    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 750, 1000, p.hasRedCircleMarker ?? false))),
     loadUncroppedPhoto(report.equipmentPhotoUrl),
     processHeaderLogo(company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL, 45, 18, 192, 8.5),
     report.digitalSignature?.enabled && report.digitalSignature.imageUrl
@@ -999,12 +1006,12 @@ export async function generateDocxBlob(
       const aereaInfo = validLocalInfos[0];
       const aereaBytes = dataUrlToUint8Array(aereaInfo.dataUrl);
 
-      // Limita rigorosamente à largura útil do documento no Word (480 pt = 170 mm)
-      // Mantém a proporção exata sem cortar ou distorcer e sem extrapolar as margens
+      // Ocupa a largura total útil do documento no Word (642 px = 170 mm), exatamente como no PDF
+      // Mantém a proporção nativa da foto sem distorcer e sem cortar
       const { width: docxW, height: docxH } = calculateContainedDimensions(
         aereaInfo.aspect,
-        MAX_DOCX_PRINTABLE_WIDTH_PT,
-        260
+        DOCX_CONTENT_WIDTH_PX,
+        340
       );
 
       docChildren.push(
@@ -1048,11 +1055,11 @@ export async function generateDocxBlob(
       const facInfo = validLocalInfos[1];
       const fachadaBytes = dataUrlToUint8Array(facInfo.dataUrl);
 
-      // Limita rigorosamente à largura útil do documento (480 pt = 170 mm)
-      const facMaxH = validLocalInfos[2] ? 210 : 260;
+      // Ocupa a largura total útil do documento no Word (642 px = 170 mm), exatamente como no PDF
+      const facMaxH = validLocalInfos[2] ? 280 : 340;
       const { width: docxW, height: docxH } = calculateContainedDimensions(
         facInfo.aspect,
-        MAX_DOCX_PRINTABLE_WIDTH_PT,
+        DOCX_CONTENT_WIDTH_PX,
         facMaxH
       );
 
@@ -1094,8 +1101,8 @@ export async function generateDocxBlob(
         const entradaBytes = dataUrlToUint8Array(p3.dataUrl);
         const { width: docxW, height: docxH } = calculateContainedDimensions(
           p3.aspect,
-          MAX_DOCX_PRINTABLE_WIDTH_PT,
-          150
+          DOCX_CONTENT_WIDTH_PX,
+          260
         );
         docChildren.push(
           new Paragraph({
@@ -1157,8 +1164,8 @@ export async function generateDocxBlob(
 
       const { width: docxW, height: docxH } = calculateContainedDimensions(
         singleInfo.aspect,
-        MAX_DOCX_PRINTABLE_WIDTH_PT,
-        260
+        DOCX_CONTENT_WIDTH_PX,
+        340
       );
 
       docChildren.push(
@@ -1417,7 +1424,7 @@ export async function generateDocxBlob(
     if (group.measurementPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.1) PONTOS DE ENSAIO DE CONTINUIDADE ÔHMICA (MILIOHMÍMETRO)`),
-        createPhotoGridTable(group.measurementPhotos, photoJpegMap, isMultiTower, true, PHOTO_GRID_HEIGHT_PT)
+        createPhotoGridTable(group.measurementPhotos, photoJpegMap, isMultiTower, true, PHOTO_GRID_HEIGHT_PX)
       );
       docxPhotosRenderedSoFar += group.measurementPhotos.length;
     }
@@ -1426,7 +1433,7 @@ export async function generateDocxBlob(
     if (group.spdaPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.2) VISTORIA DO SPDA EXISTENTE, CAPTORES & DESCIDAS`),
-        createPhotoGridTable(group.spdaPhotos, photoJpegMap, isMultiTower, false, PHOTO_GRID_HEIGHT_PT)
+        createPhotoGridTable(group.spdaPhotos, photoJpegMap, isMultiTower, false, PHOTO_GRID_HEIGHT_PX)
       );
       docxPhotosRenderedSoFar += group.spdaPhotos.length;
     }
@@ -1435,7 +1442,7 @@ export async function generateDocxBlob(
     if (group.quadrosPhotos.length > 0) {
       docChildren.push(
         createSubheaderBanner(`6.${gIdx + 1}.3) ANÁLISE DOS QUADROS DE ENERGIA & DPS (ABNT NBR 5410)`),
-        createPhotoGridTable(group.quadrosPhotos, photoJpegMap, isMultiTower, false, PHOTO_GRID_HEIGHT_PT)
+        createPhotoGridTable(group.quadrosPhotos, photoJpegMap, isMultiTower, false, PHOTO_GRID_HEIGHT_PX)
       );
       docxPhotosRenderedSoFar += group.quadrosPhotos.length;
     }

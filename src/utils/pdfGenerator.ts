@@ -257,8 +257,8 @@ export function calculateContainedDimensions(
  */
 export async function processPhotoForPdf(
   photo: PhotoSlot,
-  targetWidth = 600, // Resolução gráfica em alta definição otimizada (423 DPI em 36x48mm no papel)
-  targetHeight = 800,
+  targetWidth = 750, // Resolução gráfica em altíssima definição (500 DPI em 38x50mm no papel)
+  targetHeight = 1000,
   allowCircle = true
 ): Promise<string> {
   if (!photo?.url) return '';
@@ -353,7 +353,7 @@ export async function processPhotoForPdf(
           ctx.restore();
         }
 
-        const out = canvas.toDataURL('image/jpeg', 0.80);
+        const out = canvas.toDataURL('image/jpeg', 0.88);
         disposeCanvas(canvas);
         img.src = '';
         resolve(out);
@@ -596,9 +596,9 @@ export const generatePdfBlob = async (
     headerLogoLayout,
   ] = await Promise.all([
     Promise.all(localPhotos.map((p) => loadUncroppedPhoto(p.url))),
-    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 600, 800, p.hasRedCircleMarker ?? true))),
-    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 600, 800, false))),
-    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 600, 800, p.hasRedCircleMarker ?? false))),
+    Promise.all(spdaPhotos.map((p) => processPhotoForPdf(p, 750, 1000, p.hasRedCircleMarker ?? true))),
+    Promise.all(measurementPhotos.map((p) => processPhotoForPdf(p, 750, 1000, false))),
+    Promise.all(quadrosPhotos.map((p) => processPhotoForPdf(p, 750, 1000, p.hasRedCircleMarker ?? false))),
     loadUncroppedPhoto(equipmentPhotoUrl),
     processHeaderLogo(report.company.logoUrl || SJC_OFFICIAL_LOGO_DATA_URL),
   ]);
@@ -1242,9 +1242,9 @@ export const generatePdfBlob = async (
   onProgress?.(68, 'Gerando Vistorias Técnicas por Torre...');
 
   const PHOTO_COLS = 4;
-  const PHOTO_WIDTH_MM = 36.0;  // Formato 3:4 vertical com tamanho aumentado (36.0mm)
-  const PHOTO_IMG_H = 48.0;     // Proporção 3:4 vertical (36.0 * 4 / 3 = 48.0mm)
-  const ROW_STEP = 54.0;        // 48.0mm imagem + 6.0mm legenda e espaçamento
+  const PHOTO_WIDTH_MM = 38.0;  // Formato 3:4 vertical ocupando plenamente o espaço útil da coluna (38.0mm de 42.5mm)
+  const PHOTO_IMG_H = 50.6;     // Proporção 3:4 vertical (38.0 * 4 / 3 ≈ 50.6mm)
+  const ROW_STEP = 56.5;        // 50.6mm imagem + 5.9mm legenda e espaçamento
   const FOOTER_SAFE_Y = 277.0;  // Linha do rodapé está em 281.0mm (margem de segurança)
   const MAX_ROWS_PER_PAGE = 5;  // Limite de 5 linhas por página
 
